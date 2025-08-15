@@ -1,0 +1,11 @@
+{
+  "projects": {
+    "default": "bhavishya-road-carriers"
+  },
+  "targets": {},
+  "etags": {
+    "bhavishya-road-carriers": {
+      "extensionInstances": {}
+    }
+  }
+}

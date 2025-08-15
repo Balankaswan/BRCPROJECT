@@ -1,0 +1,118 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to check if user belongs to the same company
+    function belongsToCompany(companyId) {
+      return request.auth != null && 
+             (request.auth.uid == companyId || 
+              request.auth.token.companyName == companyId ||
+              resource.data.userId == request.auth.uid);
+    }
+    
+    // Helper function to validate document structure
+    function hasRequiredFields() {
+      return request.resource.data.keys().hasAll(['companyId', 'userId', 'createdAt', 'updatedAt']);
+    }
+    
+    // Loading Slips collection
+    match /loading_slips/{docId} {
+      allow read, write: if belongsToCompany(resource.data.companyId);
+      allow create: if request.auth != null && 
+                   hasRequiredFields() && 
+                   request.resource.data.companyId == request.auth.uid;
+    }
+    
+    // Memos collection
+    match /memos/{docId} {
+      allow read, write: if belongsToCompany(resource.data.companyId);
+      allow create: if request.auth != null && 
+                   hasRequiredFields() && 
+                   request.resource.data.companyId == request.auth.uid;
+    }
+    
+    // Bills collection
+    match /bills/{docId} {
+      allow read, write: if belongsToCompany(resource.data.companyId);
+      allow create: if request.auth != null && 
+                   hasRequiredFields() && 
+                   request.resource.data.companyId == request.auth.uid;
+    }
+    
+    // Bank Transactions collection
+    match /bank_transactions/{docId} {
+      allow read, write: if belongsToCompany(resource.data.companyId);
+      allow create: if request.auth != null && 
+                   hasRequiredFields() && 
+                   request.resource.data.companyId == request.auth.uid;
+    }
+    
+    // Cashbook Transactions collection
+    match /cashbook_transactions/{docId} {
+      allow read, write: if belongsToCompany(resource.data.companyId);
+      allow create: if request.auth != null && 
+                   hasRequiredFields() && 
+                   request.resource.data.companyId == request.auth.uid;
+    }
+    
+    // Parties collection
+    match /parties/{docId} {
+      allow read, write: if belongsToCompany(resource.data.companyId);
+      allow create: if request.auth != null && 
+                   hasRequiredFields() && 
+                   request.resource.data.companyId == request.auth.uid;
+    }
+    
+    // Suppliers collection
+    match /suppliers/{docId} {
+      allow read, write: if belongsToCompany(resource.data.companyId);
+      allow create: if request.auth != null && 
+                   hasRequiredFields() && 
+                   request.resource.data.companyId == request.auth.uid;
+    }
+    
+    // Party Ledger collection
+    match /party_ledger/{docId} {
+      allow read, write: if belongsToCompany(resource.data.companyId);
+      allow create: if request.auth != null && 
+                   hasRequiredFields() && 
+                   request.resource.data.companyId == request.auth.uid;
+    }
+    
+    // Supplier Ledger collection
+    match /supplier_ledger/{docId} {
+      allow read, write: if belongsToCompany(resource.data.companyId);
+      allow create: if request.auth != null && 
+                   hasRequiredFields() && 
+                   request.resource.data.companyId == request.auth.uid;
+    }
+    
+    // User profiles collection
+    match /user_profiles/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // POD files metadata (actual files are in Storage)
+    match /pod_metadata/{docId} {
+      allow read, write: if belongsToCompany(resource.data.companyId);
+      allow create: if request.auth != null && 
+                   hasRequiredFields() && 
+                   request.resource.data.companyId == request.auth.uid;
+    }
+    
+    // Users can only access their own business data
+    match /businessData/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Allow users to read/write their own user profiles
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Allow authenticated users to create/update their own data
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
