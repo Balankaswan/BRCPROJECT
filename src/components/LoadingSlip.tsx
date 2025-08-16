@@ -307,6 +307,14 @@ const LoadingSlip: React.FC = () => {
 
     // Validate required fields before creating memo
     if (!slip.date || !slip.from || !slip.to || !slip.vehicleNo || !slip.material || !slip.weight) {
+      console.error('Missing required fields:', { 
+        date: slip.date, 
+        from: slip.from, 
+        to: slip.to, 
+        vehicleNo: slip.vehicleNo, 
+        material: slip.material, 
+        weight: slip.weight 
+      });
       alert('Cannot create memo: Missing required fields (date, from, to, vehicle, material, or weight)');
       return;
     }
