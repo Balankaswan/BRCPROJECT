@@ -4,7 +4,7 @@ import PDFPreviewModal, { usePDFPreviewModal } from './PDFPreviewModal';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useCounters } from '../hooks/useCounters';
 import { STORAGE_KEYS } from '../utils/storage';
-import { LoadingSlip as LoadingSlipType, Memo, Bill, Party, Supplier, Advance } from '../types';
+import { LoadingSlip as LoadingSlipType, Memo, Bill, Party, Supplier } from '../types';
 import { formatCurrency, formatDate, calculateCommission, calculateMemoBalance } from '../utils/calculations';
 import { generateLoadingSlipPDF } from '../utils/pdfGenerator';
 import { validateLoadingSlipForm } from '../utils/validation';
@@ -18,7 +18,7 @@ import { apiService, useRealTimeSync } from '../services/apiService';
 
 const LoadingSlip: React.FC = () => {
   const [loadingSlips, setLoadingSlips] = useState<LoadingSlipType[]>([]);
-  const [memos, setMemos] = useLocalStorage<Memo[]>(STORAGE_KEYS.MEMOS, []);
+  const [, setMemos] = useLocalStorage<Memo[]>(STORAGE_KEYS.MEMOS, []);
   const [, setBills] = useLocalStorage<Bill[]>(STORAGE_KEYS.BILLS, []);
   const [suppliers, setSuppliers] = useLocalStorage<Supplier[]>(STORAGE_KEYS.SUPPLIERS, []);
   const [parties, setParties] = useLocalStorage<Party[]>(STORAGE_KEYS.PARTIES, []);
