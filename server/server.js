@@ -65,21 +65,72 @@ const upload = multer({ storage: storage });
 // Serve uploaded files
 app.use('/uploads', express.static(uploadsDir));
 
-// MongoDB Connection
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://balankaswan14:<db_password>@brcmanagement.xyhobwb.mongodb.net/?retryWrites=true&w=majority&appName=BRCMANAGEMENT';
+// MongoDB Connection - comprehensive authentication testing
+const connectionAttempts = [
+  {
+    name: 'Standard with transport_management DB',
+    uri: 'mongodb+srv://balankaswan14:Balan30@brcmanagement.xyhobwb.mongodb.net/transport_management?retryWrites=true&w=majority'
+  },
+  {
+    name: 'With admin auth source',
+    uri: 'mongodb+srv://balankaswan14:Balan30@brcmanagement.xyhobwb.mongodb.net/transport_management?retryWrites=true&w=majority&authSource=admin'
+  },
+  {
+    name: 'Default database (no specific DB)',
+    uri: 'mongodb+srv://balankaswan14:Balan30@brcmanagement.xyhobwb.mongodb.net/?retryWrites=true&w=majority'
+  },
+  {
+    name: 'Test database',
+    uri: 'mongodb+srv://balankaswan14:Balan30@brcmanagement.xyhobwb.mongodb.net/test?retryWrites=true&w=majority'
+  }
+];
 
-mongoose.connect(MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-.then(() => {
-  console.log('✅ Connected to MongoDB Atlas');
-  initializeCounters();
-})
-.catch((err) => {
-  console.error('❌ MongoDB connection error:', err.message);
-  process.exit(1);
-});
+async function connectToMongoDB() {
+  console.log('🔗 Starting MongoDB Atlas connection attempts...');
+  
+  for (let i = 0; i < connectionAttempts.length; i++) {
+    const attempt = connectionAttempts[i];
+    const uri = process.env.MONGODB_URI || attempt.uri;
+    
+    console.log(`\n� Attempt ${i + 1}: ${attempt.name}`);
+    
+    try {
+      await mongoose.connect(uri, { serverSelectionTimeoutMS: 5000 });
+      
+      console.log('✅ Successfully connected to MongoDB Atlas!');
+      console.log('📊 Database:', mongoose.connection.name || 'default');
+      console.log('📊 Host:', mongoose.connection.host);
+      console.log('📊 Connection state:', mongoose.connection.readyState);
+      
+      await initializeCounters();
+      return true;
+      
+    } catch (err) {
+      console.error(`❌ Failed: ${err.message}`);
+      if (err.code) console.error(`   Code: ${err.code}`);
+      if (err.codeName) console.error(`   CodeName: ${err.codeName}`);
+      
+      // Ensure clean disconnect before next attempt
+      try {
+        await mongoose.disconnect();
+      } catch (disconnectErr) {
+        // Ignore disconnect errors
+      }
+    }
+  }
+  
+  console.error('\n❌ All MongoDB connection attempts failed');
+  console.log('⚠️  Server will start without database connection');
+  console.log('\n� MongoDB Atlas Checklist:');
+  console.log('   ✓ Username: balankaswan14');
+  console.log('   ✓ Password: Balan30');
+  console.log('   ✓ Cluster: brcmanagement.xyhobwb.mongodb.net');
+  console.log('   ? Network Access: Ensure 0.0.0.0/0 is whitelisted');
+  console.log('   ? User Permissions: "Database User" with "Read and write to any database"');
+  console.log('   ? Cluster Status: Ensure cluster is not paused');
+  
+  return false;
+}
 
 // Initialize MongoDB counters
 async function initializeCounters() {
@@ -281,6 +332,13 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`📱 Health Check: http://192.168.1.3:${PORT}/api/health`);
   console.log(`📁 File uploads: ${uploadsDir}`);
   console.log(`🔄 Real-time sync: Socket.io enabled for multi-device access`);
+});
+
+// Start MongoDB connection
+connectToMongoDB().then((connected) => {
+  if (!connected) {
+    console.log('🚀 Server starting without database...');
+  }
 });
 
 // Graceful shutdown
