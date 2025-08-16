@@ -123,8 +123,7 @@ const LoadingSlip: React.FC = () => {
       weight: slip.weight,
       dimensions: slip.dimensions,
       freight: slip.freight,
-      rtoAmount: slip.rtoAmount,
-      advanceAmount: slip.advanceAmount,
+      advance: slip.advanceAmount, // Backend expects 'advance' not 'advanceAmount'
       createdAt: slip.createdAt
     };
 
@@ -306,6 +305,12 @@ const LoadingSlip: React.FC = () => {
     }] : [];
     const balance = calculateMemoBalance(freight, advances, commission, mamul, detention, 0, 0);
 
+    // Validate required fields before creating memo
+    if (!slip.date || !slip.from || !slip.to || !slip.vehicleNo || !slip.material || !slip.weight) {
+      alert('Cannot create memo: Missing required fields (date, from, to, vehicle, material, or weight)');
+      return;
+    }
+
     const memo: Memo = {
       id: Date.now().toString(),
       memoNo: getNextNumber('memo'),
@@ -346,17 +351,21 @@ const LoadingSlip: React.FC = () => {
         weight: memo.weight,
         materialType: memo.material,
         freight: memo.freight,
-        mamul: memo.mamul,
-        detention: memo.detention,
-        extraCharge: memo.extraCharge,
+        mamul: memo.mamul || 0,
+        detention: memo.detention || 0,
+        extraCharge: memo.extraCharge || 0,
         commissionPercentage: 6, // Default commission percentage
         commission: memo.commission,
         balance: memo.balance,
         status: memo.status,
-        advances: memo.advances,
-        notes: memo.notes,
-        createdAt: memo.createdAt
+        linkedLoadingSlipId: slip.id, // Link to the loading slip
+        advances: memo.advances || [],
+        notes: memo.notes || '',
+        paidDate: undefined,
+        paidAmount: 0
       };
+
+      console.log('🔍 Backend memo data being sent:', JSON.stringify(backendMemo, null, 2));
       
       const createdMemo = await apiService.createMemo(backendMemo);
       console.log('✅ Memo created via backend API:', createdMemo);
@@ -376,8 +385,7 @@ const LoadingSlip: React.FC = () => {
         weight: updatedSlip.weight,
         dimensions: updatedSlip.dimensions,
         freight: updatedSlip.freight,
-        rtoAmount: updatedSlip.rtoAmount,
-        advanceAmount: updatedSlip.advanceAmount,
+        advance: updatedSlip.advanceAmount, // Backend expects 'advance' not 'advanceAmount'
         linkedMemoNo: memo.memoNo,
         createdAt: updatedSlip.createdAt
       };

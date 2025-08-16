@@ -13,7 +13,9 @@ const loadingSlipSchema = new mongoose.Schema({
   materialType: { type: String, required: true },
   weight: { type: Number, required: true },
   freight: { type: Number, required: true },
-  advance: { type: Number, default: 0 }
+  advance: { type: Number, default: 0 },
+  linkedMemoNo: { type: String }, // Link to memo
+  linkedBillNo: { type: String }  // Link to bill
 }, {
   timestamps: true
 });
@@ -39,6 +41,7 @@ const memoSchema = new mongoose.Schema({
   status: { type: String, default: 'pending' },
   paidDate: { type: String },
   paidAmount: { type: Number, default: 0 },
+  linkedLoadingSlipId: { type: String }, // Link to loading slip
   advances: [{ 
     date: String, 
     amount: Number, 
