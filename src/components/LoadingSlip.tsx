@@ -19,7 +19,7 @@ import { apiService, useRealTimeSync } from '../services/apiService';
 const LoadingSlip: React.FC = () => {
   const [loadingSlips, setLoadingSlips] = useState<LoadingSlipType[]>([]);
   const [memos, setMemos] = useLocalStorage<Memo[]>(STORAGE_KEYS.MEMOS, []);
-  const [bills, setBills] = useLocalStorage<Bill[]>(STORAGE_KEYS.BILLS, []);
+  const [, setBills] = useLocalStorage<Bill[]>(STORAGE_KEYS.BILLS, []);
   const [suppliers, setSuppliers] = useLocalStorage<Supplier[]>(STORAGE_KEYS.SUPPLIERS, []);
   const [parties, setParties] = useLocalStorage<Party[]>(STORAGE_KEYS.PARTIES, []);
   const { getNextNumber, getNextNumberPreview, updateCounterIfHigher } = useCounters();
