@@ -1,12 +1,24 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const sqlite3 = require('sqlite3').verbose();
+const mongoose = require('mongoose');
 const http = require('http');
 const socketIo = require('socket.io');
 const bodyParser = require('body-parser');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+
+// Import MongoDB models
+const {
+  LoadingSlip,
+  Memo,
+  Bill,
+  BankEntry,
+  Party,
+  Supplier,
+  Counter
+} = require('./models/schemas');
 
 const app = express();
 const server = http.createServer(app);
@@ -49,276 +61,164 @@ const upload = multer({ storage: storage });
 // Serve uploaded files
 app.use('/uploads', express.static(uploadsDir));
 
-// Initialize SQLite database
-const db = new sqlite3.Database('./transport_management.db', (err) => {
-  if (err) {
-    console.error('Error opening database:', err.message);
-  } else {
-    console.log('Connected to SQLite database');
-    initializeDatabase();
-  }
+// MongoDB Connection
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://balankaswan14:<db_password>@brcmanagement.xyhobwb.mongodb.net/?retryWrites=true&w=majority&appName=BRCMANAGEMENT';
+
+mongoose.connect(MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+.then(() => {
+  console.log('✅ Connected to MongoDB Atlas');
+  initializeCounters();
+})
+.catch((err) => {
+  console.error('❌ MongoDB connection error:', err.message);
+  process.exit(1);
 });
 
-// Initialize database tables
-function initializeDatabase() {
-  const tables = [
-    // Loading Slips
-    `CREATE TABLE IF NOT EXISTS loading_slips (
-      id TEXT PRIMARY KEY,
-      slipNumber TEXT UNIQUE,
-      loadingDate TEXT,
-      vehicleNumber TEXT,
-      from_location TEXT,
-      to_location TEXT,
-      partyName TEXT,
-      partyPersonName TEXT,
-      supplierDetail TEXT,
-      materialType TEXT,
-      weight REAL,
-      freight REAL,
-      advance REAL,
-      createdAt TEXT,
-      updatedAt TEXT
-    )`,
-    
-    // Memos
-    `CREATE TABLE IF NOT EXISTS memos (
-      id TEXT PRIMARY KEY,
-      memoNumber TEXT UNIQUE,
-      loadingDate TEXT,
-      from_location TEXT,
-      to_location TEXT,
-      supplierName TEXT,
-      partyName TEXT,
-      vehicleNumber TEXT,
-      weight REAL,
-      materialType TEXT,
-      freight REAL,
-      mamul REAL,
-      detention REAL,
-      extraCharge REAL,
-      commissionPercentage REAL DEFAULT 6,
-      commission REAL,
-      balance REAL,
-      status TEXT DEFAULT 'pending',
-      paidDate TEXT,
-      paidAmount REAL DEFAULT 0,
-      advances TEXT, -- JSON string
-      notes TEXT,
-      createdAt TEXT,
-      updatedAt TEXT
-    )`,
-    
-    // Bills
-    `CREATE TABLE IF NOT EXISTS bills (
-      id TEXT PRIMARY KEY,
-      billNumber TEXT UNIQUE,
-      billDate TEXT,
-      partyName TEXT,
-      totalAmount REAL,
-      receivedAmount REAL DEFAULT 0,
-      balance REAL,
-      status TEXT DEFAULT 'pending',
-      receivedDate TEXT,
-      trips TEXT, -- JSON string
-      advances TEXT, -- JSON string
-      podFile TEXT,
-      notes TEXT,
-      createdAt TEXT,
-      updatedAt TEXT
-    )`,
-    
-    // Banking/Cashbook
-    `CREATE TABLE IF NOT EXISTS bank_entries (
-      id TEXT PRIMARY KEY,
-      date TEXT,
-      particulars TEXT,
-      category TEXT,
-      amount REAL,
-      type TEXT, -- 'credit' or 'debit'
-      relatedId TEXT, -- Bill ID or Memo ID
-      relatedType TEXT, -- 'bill' or 'memo'
-      createdAt TEXT,
-      updatedAt TEXT
-    )`,
-    
-    // Parties
-    `CREATE TABLE IF NOT EXISTS parties (
-      id TEXT PRIMARY KEY,
-      name TEXT UNIQUE,
-      contact TEXT,
-      address TEXT,
-      balance REAL DEFAULT 0,
-      createdAt TEXT,
-      updatedAt TEXT
-    )`,
-    
-    // Suppliers
-    `CREATE TABLE IF NOT EXISTS suppliers (
-      id TEXT PRIMARY KEY,
-      name TEXT UNIQUE,
-      contact TEXT,
-      address TEXT,
-      balance REAL DEFAULT 0,
-      createdAt TEXT,
-      updatedAt TEXT
-    )`,
-    
-    // Counters
-    `CREATE TABLE IF NOT EXISTS counters (
-      id TEXT PRIMARY KEY,
-      value INTEGER
-    )`
-  ];
+// Initialize MongoDB counters
+async function initializeCounters() {
+  try {
+    const counters = [
+      { _id: 'loadingSlip', value: 1001 },
+      { _id: 'memo', value: 6030 },
+      { _id: 'bill', value: 5900 }
+    ];
 
-  tables.forEach(table => {
-    db.run(table, (err) => {
-      if (err) {
-        console.error('Error creating table:', err.message);
-      }
-    });
-  });
-
-  // Initialize counters
-  const counters = [
-    { id: 'loadingSlip', value: 1001 },
-    { id: 'memo', value: 2001 },
-    { id: 'bill', value: 6030 }
-  ];
-
-  counters.forEach(counter => {
-    db.run(
-      'INSERT OR IGNORE INTO counters (id, value) VALUES (?, ?)',
-      [counter.id, counter.value]
-    );
-  });
+    for (const counter of counters) {
+      await Counter.findOneAndUpdate(
+        { _id: counter._id },
+        { value: counter.value },
+        { upsert: true, new: true }
+      );
+    }
+    console.log('✅ Counters initialized');
+  } catch (error) {
+    console.error('❌ Error initializing counters:', error.message);
+  }
 }
 
-// Generic CRUD operations
-function createCRUDRoutes(tableName, primaryKey = 'id') {
+// MongoDB CRUD operations
+const modelMap = {
+  'loading_slips': LoadingSlip,
+  'memos': Memo,
+  'bills': Bill,
+  'bank_entries': BankEntry,
+  'parties': Party,
+  'suppliers': Supplier
+};
+
+function createMongoRoutes(routeName, Model) {
   // GET all records
-  app.get(`/api/${tableName}`, (req, res) => {
-    db.all(`SELECT * FROM ${tableName} ORDER BY createdAt DESC`, (err, rows) => {
-      if (err) {
-        res.status(500).json({ error: err.message });
-      } else {
-        res.json(rows);
-      }
-    });
+  app.get(`/api/${routeName}`, async (req, res) => {
+    try {
+      const records = await Model.find().sort({ createdAt: -1 });
+      res.json(records);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
   });
 
   // GET single record
-  app.get(`/api/${tableName}/:id`, (req, res) => {
-    db.get(`SELECT * FROM ${tableName} WHERE ${primaryKey} = ?`, [req.params.id], (err, row) => {
-      if (err) {
-        res.status(500).json({ error: err.message });
-      } else if (!row) {
-        res.status(404).json({ error: 'Record not found' });
-      } else {
-        res.json(row);
+  app.get(`/api/${routeName}/:id`, async (req, res) => {
+    try {
+      const record = await Model.findById(req.params.id);
+      if (!record) {
+        return res.status(404).json({ error: 'Record not found' });
       }
-    });
+      res.json(record);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
   });
 
   // POST new record
-  app.post(`/api/${tableName}`, (req, res) => {
-    const data = req.body;
-    data.createdAt = new Date().toISOString();
-    data.updatedAt = new Date().toISOString();
-
-    const columns = Object.keys(data).join(', ');
-    const placeholders = Object.keys(data).map(() => '?').join(', ');
-    const values = Object.values(data);
-
-    db.run(
-      `INSERT INTO ${tableName} (${columns}) VALUES (${placeholders})`,
-      values,
-      function(err) {
-        if (err) {
-          res.status(500).json({ error: err.message });
-        } else {
-          // Broadcast the new record to all connected clients
-          io.emit(`${tableName}_created`, { id: data[primaryKey], ...data });
-          res.json({ id: data[primaryKey], ...data });
-        }
-      }
-    );
+  app.post(`/api/${routeName}`, async (req, res) => {
+    try {
+      const record = new Model(req.body);
+      const savedRecord = await record.save();
+      
+      // Broadcast the new record to all connected clients
+      io.emit(`${routeName}_created`, savedRecord);
+      res.json(savedRecord);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
   });
 
   // PUT update record
-  app.put(`/api/${tableName}/:id`, (req, res) => {
-    const data = req.body;
-    data.updatedAt = new Date().toISOString();
-
-    const updates = Object.keys(data).map(key => `${key} = ?`).join(', ');
-    const values = [...Object.values(data), req.params.id];
-
-    db.run(
-      `UPDATE ${tableName} SET ${updates} WHERE ${primaryKey} = ?`,
-      values,
-      function(err) {
-        if (err) {
-          res.status(500).json({ error: err.message });
-        } else {
-          // Broadcast the updated record to all connected clients
-          io.emit(`${tableName}_updated`, { id: req.params.id, ...data });
-          res.json({ id: req.params.id, ...data });
-        }
+  app.put(`/api/${routeName}/:id`, async (req, res) => {
+    try {
+      const updatedRecord = await Model.findByIdAndUpdate(
+        req.params.id,
+        req.body,
+        { new: true, runValidators: true }
+      );
+      
+      if (!updatedRecord) {
+        return res.status(404).json({ error: 'Record not found' });
       }
-    );
+      
+      // Broadcast the updated record to all connected clients
+      io.emit(`${routeName}_updated`, updatedRecord);
+      res.json(updatedRecord);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
   });
 
   // DELETE record
-  app.delete(`/api/${tableName}/:id`, (req, res) => {
-    db.run(`DELETE FROM ${tableName} WHERE ${primaryKey} = ?`, [req.params.id], function(err) {
-      if (err) {
-        res.status(500).json({ error: err.message });
-      } else {
-        // Broadcast the deletion to all connected clients
-        io.emit(`${tableName}_deleted`, { id: req.params.id });
-        res.json({ message: 'Record deleted successfully' });
+  app.delete(`/api/${routeName}/:id`, async (req, res) => {
+    try {
+      const deletedRecord = await Model.findByIdAndDelete(req.params.id);
+      
+      if (!deletedRecord) {
+        return res.status(404).json({ error: 'Record not found' });
       }
-    });
+      
+      // Broadcast the deletion to all connected clients
+      io.emit(`${routeName}_deleted`, { id: req.params.id });
+      res.json({ message: 'Record deleted successfully' });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
   });
 }
 
-// Create CRUD routes for all tables
-createCRUDRoutes('loading_slips');
-createCRUDRoutes('memos');
-createCRUDRoutes('bills');
-createCRUDRoutes('bank_entries');
-createCRUDRoutes('parties');
-createCRUDRoutes('suppliers');
-
-// Counter management
-app.get('/api/counters', (req, res) => {
-  db.all('SELECT * FROM counters', (err, rows) => {
-    if (err) {
-      res.status(500).json({ error: err.message });
-    } else {
-      const counters = {};
-      rows.forEach(row => {
-        counters[row.id] = row.value;
-      });
-      res.json(counters);
-    }
-  });
+// Create MongoDB routes for all collections
+Object.keys(modelMap).forEach(routeName => {
+  createMongoRoutes(routeName, modelMap[routeName]);
 });
 
-app.put('/api/counters/:id', (req, res) => {
-  const { value } = req.body;
-  db.run(
-    'UPDATE counters SET value = ? WHERE id = ?',
-    [value, req.params.id],
-    function(err) {
-      if (err) {
-        res.status(500).json({ error: err.message });
-      } else {
-        io.emit('counter_updated', { id: req.params.id, value });
-        res.json({ id: req.params.id, value });
-      }
-    }
-  );
+// Counter management with MongoDB
+app.get('/api/counters', async (req, res) => {
+  try {
+    const counterDocs = await Counter.find();
+    const counters = {};
+    counterDocs.forEach(doc => {
+      counters[doc._id] = doc.value;
+    });
+    res.json(counters);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/counters/:id', async (req, res) => {
+  try {
+    const { value } = req.body;
+    const updatedCounter = await Counter.findOneAndUpdate(
+      { _id: req.params.id },
+      { value },
+      { new: true, upsert: true }
+    );
+    
+    io.emit('counter_updated', { id: req.params.id, value });
+    res.json({ id: req.params.id, value });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // File upload endpoint for POD documents
@@ -345,12 +245,16 @@ io.on('connection', (socket) => {
   });
   
   // Handle real-time data sync requests
-  socket.on('sync_request', (tableName) => {
-    db.all(`SELECT * FROM ${tableName} ORDER BY createdAt DESC`, (err, rows) => {
-      if (!err) {
-        socket.emit('sync_response', { tableName, data: rows });
+  socket.on('sync_request', async (tableName) => {
+    try {
+      const Model = modelMap[tableName];
+      if (Model) {
+        const data = await Model.find().sort({ createdAt: -1 });
+        socket.emit('sync_response', { tableName, data });
       }
-    });
+    } catch (error) {
+      console.error('Sync error:', error.message);
+    }
   });
 });
 
@@ -366,7 +270,7 @@ app.get('/api/health', (req, res) => {
 // Start server on 0.0.0.0 to accept connections from any IP
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Transport Management Server running on http://0.0.0.0:${PORT}`);
-  console.log(`📊 Database: SQLite (transport_management.db)`);
+  console.log(`📊 Database: MongoDB Atlas (BRCMANAGEMENT)`);
   console.log(`🌐 LAN Access URLs:`);
   console.log(`   Local:  http://localhost:${PORT}/api/`);
   console.log(`   LAN:    http://192.168.1.3:${PORT}/api/`);
@@ -378,15 +282,16 @@ server.listen(PORT, '0.0.0.0', () => {
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\n🛑 Shutting down server...');
-  db.close((err) => {
-    if (err) {
-      console.error('Error closing database:', err.message);
-    } else {
-      console.log('✅ Database connection closed');
-    }
-  });
-  server.close(() => {
-    console.log('✅ Server closed');
-    process.exit(0);
-  });
+  mongoose.connection.close()
+    .then(() => {
+      console.log('✅ MongoDB connection closed');
+      server.close(() => {
+        console.log('✅ Server closed');
+        process.exit(0);
+      });
+    })
+    .catch((err) => {
+      console.error('Error closing MongoDB connection:', err.message);
+      process.exit(1);
+    });
 });
