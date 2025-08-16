@@ -1,27 +1,61 @@
 import io from 'socket.io-client';
 
-// Configuration - Use Node.js backend on LAN IP for multi-device access
-const API_BASE_URL = 'http://192.168.1.3:3001/api';
-const SOCKET_URL = 'http://192.168.1.3:3001';
+// Configuration - Environment-based URLs
+const isLocalhost = window.location.hostname === 'localhost' || 
+                   window.location.hostname === '127.0.0.1' ||
+                   window.location.hostname.startsWith('192.168.') ||
+                   window.location.port === '5173';
 
+const API_BASE_URL = isLocalhost 
+  ? 'http://192.168.1.13:3001/api'
+  : 'https://brcproject.onrender.com/api';
+
+const SOCKET_URL = isLocalhost 
+  ? 'http://192.168.1.13:3001'
+  : 'https://brcproject.onrender.com';
+
+console.log('🔍 Debug Info:');
+console.log('   - window.location.hostname:', window.location.hostname);
+console.log('   - isLocalhost:', isLocalhost);
+console.log('🌐 Environment:', isLocalhost ? 'LOCAL' : 'PRODUCTION');
 console.log('🌐 API Base URL:', API_BASE_URL);
 console.log('🔌 Socket URL:', SOCKET_URL);
 
-// Socket.io connection
+// Socket.io connection with secure transport
 let socket: any = null;
 
 export const initializeSocket = () => {
   if (!socket) {
-    socket = io(SOCKET_URL, {
-      transports: ['websocket', 'polling']
-    });
+    console.log('🔌 Initializing Socket.io connection...');
+    
+    const socketConfig = isLocalhost ? {
+      transports: ['websocket', 'polling'],
+      timeout: 10000
+    } : {
+      transports: ['websocket', 'polling'],
+      secure: true,
+      rejectUnauthorized: false,
+      timeout: 10000,
+      forceNew: true
+    };
+    
+    socket = io(SOCKET_URL, socketConfig);
     
     socket.on('connect', () => {
-      console.log('✅ Connected to server');
+      console.log('✅ Connected to server via Socket.io');
+      console.log('🔗 Transport:', socket.io.engine.transport.name);
+      console.log('🌍 Environment:', isLocalhost ? 'LOCAL' : 'PRODUCTION');
     });
     
-    socket.on('disconnect', () => {
-      console.log('❌ Disconnected from server');
+    socket.on('disconnect', (reason: string) => {
+      console.log('❌ Disconnected from server:', reason);
+    });
+
+    socket.on('connect_error', (error: Error) => {
+      console.error('❌ Socket connection error:', error.message);
+      if (!isLocalhost) {
+        console.log('🔄 Falling back to polling transport...');
+      }
     });
   }
   return socket;
@@ -37,8 +71,11 @@ export const getSocket = () => {
 // Generic API functions
 class ApiService {
   private async request(endpoint: string, options: RequestInit = {}) {
+    const fullUrl = `${API_BASE_URL}${endpoint}`;
+    console.log(`🔄 API Request: ${options.method || 'GET'} ${fullUrl}`);
+    
     try {
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      const response = await fetch(fullUrl, {
         headers: {
           'Content-Type': 'application/json',
           ...options.headers,
@@ -46,13 +83,27 @@ class ApiService {
         ...options,
       });
 
+      console.log(`📡 Response Status: ${response.status} ${response.statusText}`);
+      
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        console.error(`❌ API Error Response:`, errorText);
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
       }
 
-      return await response.json();
+      const data = await response.json();
+      console.log(`✅ API Response:`, data);
+      return data;
     } catch (error) {
-      console.error('API request failed:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      
+      console.error('❌ API request failed:', {
+        url: fullUrl,
+        method: options.method || 'GET',
+        error: errorMessage,
+        stack: errorStack
+      });
       throw error;
     }
   }

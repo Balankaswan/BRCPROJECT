@@ -7,7 +7,7 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const http = require('http');
-const socketIo = require('socket.io');
+const { Server } = require('socket.io');
 const bodyParser = require('body-parser');
 const multer = require('multer');
 const path = require('path');
@@ -26,15 +26,26 @@ const {
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server, {
+const io = new Server(server, {
   cors: {
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE"]
-  }
+    origin: [
+      'https://brcmanagement.netlify.app',
+      'http://localhost:5173',
+      'http://localhost:3000',
+      'http://192.168.1.3:5173'
+    ],
+    methods: ['GET', 'POST'],
+    credentials: true
+  },
+  transports: ['websocket', 'polling'],
+  allowEIO3: true,
+  pingTimeout: 60000,
+  pingInterval: 25000
 });
 
 const PORT = process.env.PORT || 3001;
 
+// CORS configuration for production deployment
 // Middleware - Enhanced CORS for LAN access
 app.use(cors({
   origin: '*',
@@ -132,6 +143,60 @@ async function connectToMongoDB() {
   return false;
 }
 
+// Initialize sample data for testing
+async function initializeSampleData() {
+  try {
+    // Check if data already exists
+    const existingParties = await Party.countDocuments();
+    if (existingParties > 0) {
+      console.log('📊 Sample data already exists, skipping initialization');
+      return;
+    }
+
+    console.log('🔄 Initializing sample data...');
+
+    // Sample parties
+    const sampleParties = [
+      {
+        name: 'ABC Transport Co.',
+        address: 'Mumbai, Maharashtra',
+        phone: '9876543210',
+        gst: '27ABCDE1234F1Z5',
+        type: 'customer'
+      },
+      {
+        name: 'XYZ Logistics',
+        address: 'Delhi, India',
+        phone: '9876543211',
+        gst: '07XYZAB1234G1Z8',
+        type: 'customer'
+      }
+    ];
+
+    // Sample suppliers
+    const sampleSuppliers = [
+      {
+        name: 'Fuel Station ABC',
+        address: 'Highway 1, Gujarat',
+        phone: '9876543212',
+        gst: '24FUELX1234H1Z9',
+        type: 'fuel'
+      }
+    ];
+
+    // Insert sample data
+    await Party.insertMany(sampleParties);
+    await Supplier.insertMany(sampleSuppliers);
+
+    console.log('✅ Sample data initialized successfully');
+    console.log(`   - ${sampleParties.length} parties added`);
+    console.log(`   - ${sampleSuppliers.length} suppliers added`);
+
+  } catch (error) {
+    console.error('❌ Error initializing sample data:', error.message);
+  }
+}
+
 // Initialize MongoDB counters
 async function initializeCounters() {
   try {
@@ -144,11 +209,16 @@ async function initializeCounters() {
     for (const counter of counters) {
       await Counter.findOneAndUpdate(
         { _id: counter._id },
-        { value: counter.value },
+        { $setOnInsert: counter },
         { upsert: true, new: true }
       );
     }
+    
     console.log('✅ Counters initialized');
+    
+    // Initialize sample data after counters
+    await initializeSampleData();
+    
   } catch (error) {
     console.error('❌ Error initializing counters:', error.message);
   }
@@ -190,15 +260,25 @@ function createMongoRoutes(routeName, Model) {
 
   // POST new record
   app.post(`/api/${routeName}`, async (req, res) => {
+    console.log(`📝 POST /${routeName} - Request body:`, req.body);
+    console.log(`📝 Content-Type:`, req.headers['content-type']);
+    
     try {
       const record = new Model(req.body);
+      console.log(`💾 Creating new ${routeName} record:`, record);
+      
       const savedRecord = await record.save();
+      console.log(`✅ ${routeName} saved successfully:`, savedRecord._id);
       
       // Broadcast the new record to all connected clients
+      console.log(`📡 Broadcasting ${routeName}_created to ${io.engine.clientsCount} clients`);
       io.emit(`${routeName}_created`, savedRecord);
+      
       res.json(savedRecord);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      console.error(`❌ Error saving ${routeName}:`, error.message);
+      console.error(`🔍 Validation errors:`, error.errors);
+      res.status(500).json({ error: error.message, details: error.errors });
     }
   });
 
@@ -291,12 +371,85 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
   });
 });
 
+// Test endpoint to verify API functionality
+app.post('/api/test-party', async (req, res) => {
+  console.log('🧪 Test endpoint called - creating test party');
+  try {
+    const testParty = new Party({
+      name: 'Test Party ' + Date.now(),
+      address: 'Test Address',
+      phone: '1234567890',
+      gst: 'TEST123456789',
+      type: 'customer'
+    });
+    
+    const saved = await testParty.save();
+    console.log('✅ Test party created:', saved._id);
+    
+    // Also return count of all parties
+    const count = await Party.countDocuments();
+    
+    res.json({
+      success: true,
+      testParty: saved,
+      totalParties: count,
+      message: 'Test party created successfully'
+    });
+  } catch (error) {
+    console.error('❌ Test endpoint failed:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      details: error.errors
+    });
+  }
+});
+
+// API root endpoint
+app.get('/api', (req, res) => {
+  res.json({
+    message: 'Transport Management API',
+    version: '1.0.0',
+    endpoints: {
+      health: '/api/health',
+      parties: '/api/parties',
+      suppliers: '/api/suppliers',
+      loading_slips: '/api/loading_slips',
+      memos: '/api/memos',
+      bills: '/api/bills',
+      bank_entries: '/api/bank_entries',
+      upload: '/api/upload',
+      test: '/api/test-party'
+    },
+    status: 'API is running'
+  });
+});
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
+    collections: {
+      parties: 'Party',
+      suppliers: 'Supplier',
+      loadingSlips: 'LoadingSlip',
+      memos: 'Memo',
+      bills: 'Bill',
+      bankEntries: 'BankEntry'
+    }
+  });
+});
+
 // Socket.io connection handling
 io.on('connection', (socket) => {
-  console.log('Client connected:', socket.id);
+  console.log('🔌 Client connected:', socket.id);
+  console.log('📊 Total clients:', io.engine.clientsCount);
   
   socket.on('disconnect', () => {
-    console.log('Client disconnected:', socket.id);
+    console.log('❌ Client disconnected:', socket.id);
+    console.log('📊 Total clients:', io.engine.clientsCount);
   });
   
   // Handle real-time data sync requests
@@ -310,15 +463,6 @@ io.on('connection', (socket) => {
     } catch (error) {
       console.error('Sync error:', error.message);
     }
-  });
-});
-
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
-    timestamp: new Date().toISOString(),
-    database: 'Connected'
   });
 });
 
@@ -356,4 +500,9 @@ process.on('SIGINT', () => {
       console.error('Error closing MongoDB connection:', err.message);
       process.exit(1);
     });
+});
+
+// Catch-all route for unknown API endpoints
+app.use('/api/*', (req, res) => {
+  res.status(404).json({ error: 'Unknown API endpoint' });
 });

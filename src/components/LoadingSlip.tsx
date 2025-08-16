@@ -14,10 +14,10 @@ import DateInput from './DateInput';
 import AutoCompleteLocationInput from './AutoCompleteLocationInput';
 import DragDropInput from './DragDropInput';
 import VehicleAutocomplete from './VehicleAutocomplete';
-import { apiService } from '../services/apiService';
+import { apiService, useRealTimeSync } from '../services/apiService';
 
 const LoadingSlip: React.FC = () => {
-  const [loadingSlips, setLoadingSlips] = useLocalStorage<LoadingSlipType[]>(STORAGE_KEYS.LOADING_SLIPS, []);
+  const [loadingSlips, setLoadingSlips] = useState<LoadingSlipType[]>([]);
   const [memos, setMemos] = useLocalStorage<Memo[]>(STORAGE_KEYS.MEMOS, []);
   const [bills, setBills] = useLocalStorage<Bill[]>(STORAGE_KEYS.BILLS, []);
   const [suppliers, setSuppliers] = useLocalStorage<Supplier[]>(STORAGE_KEYS.SUPPLIERS, []);
@@ -29,11 +29,23 @@ const LoadingSlip: React.FC = () => {
   const [previewSlip, setPreviewSlip] = useState<LoadingSlipType | null>(null);
   const { isOpen: isPreviewOpen, openModal: openPreview, closeModal: closePreview } = usePDFPreviewModal();
 
-  // Initialize location suggestions and vehicle-supplier mappings from existing data on component mount
+  // Load data from API and set up real-time sync
   useEffect(() => {
+    const loadData = async () => {
+      try {
+        const data = await apiService.getLoadingSlips();
+        setLoadingSlips(data);
+      } catch (error) {
+        console.error('Error loading loading slips:', error);
+      }
+    };
+    loadData();
     initializeLocationSuggestionsFromExistingData();
     initializeVehicleSupplierMappingsFromExistingData();
   }, []);
+
+  // Set up real-time sync
+  useRealTimeSync('loading_slips', setLoadingSlips);
 
   const [formData, setFormData] = useState({
     slipNo: getNextNumberPreview('loadingSlip'),
@@ -103,10 +115,10 @@ const LoadingSlip: React.FC = () => {
       // Try backend API first, fallback to localStorage
       try {
         if (editingSlip) {
-          await apiService.update('loading_slips', editingSlip.id, slip);
+          await apiService.updateLoadingSlip(editingSlip.id, slip);
           console.log('✅ Loading slip updated via backend API');
         } else {
-          await apiService.create('loading_slips', slip);
+          await apiService.createLoadingSlip(slip);
           console.log('✅ Loading slip created via backend API');
         }
       } catch (apiError) {
