@@ -270,9 +270,20 @@ function createMongoRoutes(routeName, Model) {
       const savedRecord = await record.save();
       console.log(`✅ ${routeName} saved successfully:`, savedRecord._id);
       
-      // Broadcast the new record to all connected clients
-      console.log(`📡 Broadcasting ${routeName}_created to ${io.engine.clientsCount} clients`);
-      io.emit(`${routeName}_created`, savedRecord);
+      // Broadcast the new record to all connected clients with enhanced logging
+      const clientCount = io.engine.clientsCount;
+      console.log(`📡 Broadcasting ${routeName}_created to ${clientCount} connected clients`);
+      console.log(`📊 Broadcast data:`, JSON.stringify(savedRecord, null, 2));
+      
+      // Emit to all clients with error handling
+      try {
+        io.emit(`${routeName}_created`, savedRecord);
+        console.log(`✅ Broadcast successful for ${routeName}_created`);
+      } catch (broadcastError) {
+        console.error(`❌ Broadcast failed for ${routeName}_created:`, broadcastError);
+      }
+
+      
       
       res.json(savedRecord);
     } catch (error) {
@@ -284,6 +295,8 @@ function createMongoRoutes(routeName, Model) {
 
   // PUT update record
   app.put(`/api/${routeName}/:id`, async (req, res) => {
+    console.log(`📝 PUT /${routeName}/${req.params.id} - Request body:`, req.body);
+    
     try {
       const updatedRecord = await Model.findByIdAndUpdate(
         req.params.id,
@@ -295,10 +308,24 @@ function createMongoRoutes(routeName, Model) {
         return res.status(404).json({ error: 'Record not found' });
       }
       
-      // Broadcast the updated record to all connected clients
-      io.emit(`${routeName}_updated`, updatedRecord);
+      console.log(`✅ ${routeName} updated successfully:`, updatedRecord._id);
+      
+      // Broadcast the updated record to all connected clients with enhanced logging
+      const clientCount = io.engine.clientsCount;
+      console.log(`📡 Broadcasting ${routeName}_updated to ${clientCount} connected clients`);
+      console.log(`📊 Broadcast data:`, JSON.stringify(updatedRecord, null, 2));
+      
+      // Emit to all clients with error handling
+      try {
+        io.emit(`${routeName}_updated`, updatedRecord);
+        console.log(`✅ Broadcast successful for ${routeName}_updated`);
+      } catch (broadcastError) {
+        console.error(`❌ Broadcast failed for ${routeName}_updated:`, broadcastError);
+      }
+      
       res.json(updatedRecord);
     } catch (error) {
+      console.error(`❌ Error updating ${routeName}:`, error.message);
       res.status(500).json({ error: error.message });
     }
   });
