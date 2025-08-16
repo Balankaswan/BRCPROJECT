@@ -109,18 +109,47 @@ const LoadingSlip: React.FC = () => {
       createdAt: editingSlip?.createdAt || new Date().toISOString()
     };
 
+    // Map frontend fields to backend schema fields
+    const backendSlip = {
+      slipNumber: slip.slipNo,
+      loadingDate: slip.date,
+      vehicleNumber: slip.vehicleNo,
+      from_location: slip.from,
+      to_location: slip.to,
+      partyName: slip.partyName,
+      partyPersonName: slip.partyPersonName,
+      supplierDetail: slip.supplierDetail,
+      materialType: slip.material,
+      weight: slip.weight,
+      dimensions: slip.dimensions,
+      freight: slip.freight,
+      rtoAmount: slip.rtoAmount,
+      advanceAmount: slip.advanceAmount,
+      createdAt: slip.createdAt
+    };
+
     try {
       console.log('🚀 Saving loading slip...', slip);
       
       // Try backend API first, fallback to localStorage
       try {
         if (editingSlip) {
-          await apiService.updateLoadingSlip(editingSlip.id, slip);
+          await apiService.updateLoadingSlip(editingSlip.id, backendSlip);
           console.log('✅ Loading slip updated via backend API');
         } else {
-          await apiService.createLoadingSlip(slip);
+          await apiService.createLoadingSlip(backendSlip);
           console.log('✅ Loading slip created via backend API');
         }
+        
+        // Refresh data from API after successful save
+        try {
+          const updatedData = await apiService.getLoadingSlips();
+          setLoadingSlips(updatedData);
+          console.log('✅ Loading slips refreshed from API');
+        } catch (refreshError) {
+          console.warn('⚠️ Failed to refresh data from API:', refreshError);
+        }
+        
       } catch (apiError) {
         console.warn('⚠️ Backend API failed, saving to localStorage:', apiError);
         

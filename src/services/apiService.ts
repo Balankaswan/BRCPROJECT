@@ -141,7 +141,26 @@ class ApiService {
   
   // Loading Slips
   async getLoadingSlips() {
-    return this.getAll('loading_slips');
+    const backendData = await this.getAll('loading_slips');
+    // Map backend fields to frontend fields
+    return backendData.map((item: any) => ({
+      id: item._id || item.id,
+      slipNo: item.slipNumber,
+      date: item.loadingDate,
+      vehicleNo: item.vehicleNumber,
+      from: item.from_location,
+      to: item.to_location,
+      partyName: item.partyName,
+      partyPersonName: item.partyPersonName,
+      supplierDetail: item.supplierDetail,
+      material: item.materialType,
+      weight: item.weight,
+      dimensions: item.dimensions,
+      freight: item.freight,
+      rtoAmount: item.rtoAmount,
+      advanceAmount: item.advanceAmount,
+      createdAt: item.createdAt
+    }));
   }
 
   async createLoadingSlip(data: any) {

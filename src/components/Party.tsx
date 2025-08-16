@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, Eye, Search, Download } from 'lucide-react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { STORAGE_KEYS } from '../utils/storage';
 import { Party as PartyType, Bill } from '../types';
 import { formatCurrency, formatDate, calculatePartyPendingBalance, fixAllBalances, synchronizePartyBalance } from '../utils/calculations';
+import { apiService, useRealTimeSync } from '../services/apiService';
 
 
 const Party: React.FC = () => {
-  const [parties, setParties] = useLocalStorage<PartyType[]>(STORAGE_KEYS.PARTIES, []);
+  const [parties, setParties] = useState<PartyType[]>([]);
   const [bills, setBills] = useLocalStorage<Bill[]>(STORAGE_KEYS.BILLS, []);
   const [receivedBills] = useLocalStorage<Bill[]>(STORAGE_KEYS.RECEIVED_BILLS, []);
   const [showForm, setShowForm] = useState(false);
