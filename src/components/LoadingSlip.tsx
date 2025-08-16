@@ -34,7 +34,15 @@ const LoadingSlip: React.FC = () => {
     const loadData = async () => {
       try {
         const data = await apiService.getLoadingSlips();
-        setLoadingSlips(data);
+        // Transform API data to include linkedMemoNo and linkedBillNo fields
+        const transformedData = data.map((slip: any) => ({
+          ...slip,
+          slipNo: slip.slipNumber || slip.slipNo,
+          vehicleNo: slip.vehicleNumber || slip.vehicleNo,
+          linkedMemoNo: slip.linkedMemoNo || null,
+          linkedBillNo: slip.linkedBillNo || null
+        }));
+        setLoadingSlips(transformedData);
       } catch (error) {
         console.error('Error loading loading slips:', error);
       }
@@ -44,8 +52,17 @@ const LoadingSlip: React.FC = () => {
     initializeVehicleSupplierMappingsFromExistingData();
   }, []);
 
-  // Set up real-time sync
-  useRealTimeSync('loading_slips', setLoadingSlips);
+  // Set up real-time sync with data transformation
+  useRealTimeSync('loading_slips', (data: any[]) => {
+    const transformedData = data.map((slip: any) => ({
+      ...slip,
+      slipNo: slip.slipNumber || slip.slipNo,
+      vehicleNo: slip.vehicleNumber || slip.vehicleNo,
+      linkedMemoNo: slip.linkedMemoNo || null,
+      linkedBillNo: slip.linkedBillNo || null
+    }));
+    setLoadingSlips(transformedData);
+  });
 
   const [formData, setFormData] = useState({
     slipNo: getNextNumberPreview('loadingSlip'),
@@ -409,7 +426,15 @@ const LoadingSlip: React.FC = () => {
             apiService.getLoadingSlips(),
             apiService.getMemos()
           ]);
-          setLoadingSlips(updatedLoadingSlips);
+          // Transform loading slips data
+          const transformedLoadingSlips = updatedLoadingSlips.map((slip: any) => ({
+            ...slip,
+            slipNo: slip.slipNumber || slip.slipNo,
+            vehicleNo: slip.vehicleNumber || slip.vehicleNo,
+            linkedMemoNo: slip.linkedMemoNo || null,
+            linkedBillNo: slip.linkedBillNo || null
+          }));
+          setLoadingSlips(transformedLoadingSlips);
           setMemos(updatedMemos);
           console.log('✅ Data refreshed from API after memo creation');
         } catch (refreshError) {
