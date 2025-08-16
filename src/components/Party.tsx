@@ -9,6 +9,22 @@ import { apiService, useRealTimeSync } from '../services/apiService';
 
 const Party: React.FC = () => {
   const [parties, setParties] = useState<PartyType[]>([]);
+
+  // Load data from API and set up real-time sync
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const data = await apiService.getParties();
+        setParties(data);
+      } catch (error) {
+        console.error('Error loading parties:', error);
+      }
+    };
+    loadData();
+  }, []);
+
+  // Set up real-time sync
+  useRealTimeSync('parties', setParties);
   const [bills, setBills] = useLocalStorage<Bill[]>(STORAGE_KEYS.BILLS, []);
   const [receivedBills] = useLocalStorage<Bill[]>(STORAGE_KEYS.RECEIVED_BILLS, []);
   const [showForm, setShowForm] = useState(false);
@@ -23,7 +39,7 @@ const Party: React.FC = () => {
     gst: ''
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     const party: PartyType = {
@@ -37,10 +53,26 @@ const Party: React.FC = () => {
       createdAt: editingParty?.createdAt || new Date().toISOString()
     };
 
-    if (editingParty) {
-      setParties(prev => prev.map(p => p.id === editingParty.id ? party : p));
-    } else {
-      setParties(prev => [...prev, party]);
+    try {
+      if (editingParty) {
+        await apiService.updateParty(editingParty.id, party);
+        console.log('✅ Party updated via backend API');
+      } else {
+        await apiService.createParty(party);
+        console.log('✅ Party created via backend API');
+      }
+      
+      // Refresh data from API
+      const updatedData = await apiService.getParties();
+      setParties(updatedData);
+    } catch (error) {
+      console.error('❌ Failed to save party:', error);
+      // Fallback to localStorage
+      if (editingParty) {
+        setParties(prev => prev.map(p => p.id === editingParty.id ? party : p));
+      } else {
+        setParties(prev => [...prev, party]);
+      }
     }
 
     resetForm();

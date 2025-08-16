@@ -14,14 +14,35 @@ import DateInput from './DateInput';
 import AutoCompleteLocationInput from './AutoCompleteLocationInput';
 import BillPaymentModal from './BillPaymentModal';
 import PDFPreviewModal from './PDFPreviewModal';
-import { apiService } from '../services/apiService';
+import { apiService, useRealTimeSync } from '../services/apiService';
 
 const Bills: React.FC = () => {
-  const [bills, setBills] = useLocalStorage<Bill[]>(STORAGE_KEYS.BILLS, []);
+  const [bills, setBills] = useState<Bill[]>([]);
+
+  // Load data from API and set up real-time sync
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const data = await apiService.getBills();
+        setBills(data);
+      } catch (error) {
+        console.error('Error loading bills:', error);
+      }
+    };
+    loadData();
+  }, []);
+
+  // Set up real-time sync (attach once with cleanup)
+  useEffect(() => {
+    const cleanup = useRealTimeSync('bills', setBills);
+    return () => {
+      if (typeof cleanup === 'function') cleanup();
+    };
+  }, [setBills]);
   const [parties, setParties] = useLocalStorage<Party[]>(STORAGE_KEYS.PARTIES, []);
-  const [receivedBills, setReceivedBills] = useLocalStorage<Bill[]>(STORAGE_KEYS.RECEIVED_BILLS, []);
+  const [, setReceivedBills] = useLocalStorage<Bill[]>(STORAGE_KEYS.RECEIVED_BILLS, []);
   const [bankEntries] = useLocalStorage<BankEntry[]>(STORAGE_KEYS.BANK_ENTRIES, []);
-  const [pods, setPods] = useLocalStorage<POD[]>(STORAGE_KEYS.PODS, []);
+  const [, setPods] = useLocalStorage<POD[]>(STORAGE_KEYS.PODS, []);
   const { getNextNumber, getNextNumberPreview, updateCounterIfHigher } = useCounters();
   const [showForm, setShowForm] = useState(false);
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
@@ -29,7 +50,7 @@ const Bills: React.FC = () => {
   const [showAdvanceForm, setShowAdvanceForm] = useState<string | null>(null);
   const [showPODForm, setShowPODForm] = useState<string | null>(null);
   const [showPaymentModal, setShowPaymentModal] = useState<Bill | null>(null);
-  const [billPayments, setBillPayments] = useLocalStorage<BillPayment[]>(STORAGE_KEYS.BILL_PAYMENTS, []);
+  const [, setBillPayments] = useLocalStorage<BillPayment[]>(STORAGE_KEYS.BILL_PAYMENTS, []);
   const [partyLedgers, setPartyLedgers] = useLocalStorage<PartyLedger[]>(STORAGE_KEYS.PARTY_LEDGERS, []);
   const [searchTerm, setSearchTerm] = useState('');
   const [previewBill, setPreviewBill] = useState<Bill | null>(null);
@@ -133,45 +154,49 @@ const Bills: React.FC = () => {
 
     const bill = {
       id: editingBill?.id || Date.now().toString(),
-      billNumber: billNo,
+      billNo,
       billDate: formData.billDate,
+      partyId: formData.partyId,
       partyName: formData.partyName,
-      trips: JSON.stringify(formData.trips),
+      trips: formData.trips,
       totalFreight,
       mamul,
       detention,
       rtoAmount: finalRtoAmount,
       extraCharges,
-      balance: calculateBillBalance(totalFreight, editingBill?.advances || [], detention, finalRtoAmount, extraCharges),
-      status: 'pending',
+      balance: calculateBillBalance(
+        totalFreight,
+        editingBill?.advances || [],
+        detention,
+        finalRtoAmount,
+        extraCharges
+      ),
+      status: 'pending' as const,
       receivedDate: null,
       receivedAmount: 0,
-      advances: JSON.stringify(editingBill?.advances || []),
-      payments: JSON.stringify(editingBill?.payments || []),
+      advances: editingBill?.advances || [],
+      payments: editingBill?.payments || [],
       totalDeductions: editingBill?.totalDeductions || 0,
       netAmountReceived: editingBill?.netAmountReceived || 0,
       notes: formData.notes,
       createdAt: editingBill?.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     };
 
     try {
       console.log('🚀 Saving bill to backend API for real-time sync...', bill);
-      
+
       if (editingBill) {
-        // Update existing bill via backend API
-        await apiService.update('bills', editingBill.id, bill);
+        await apiService.updateBill(editingBill.id, bill);
         console.log('✅ Bill updated successfully via backend API');
       } else {
-        // Create new bill via backend API
-        await apiService.create('bills', bill);
+        await apiService.createBill(bill);
         console.log('✅ Bill created successfully via backend API');
       }
-      
-      // The Socket.io listeners will automatically update the UI
+
+      // The Socket.io listeners will automatically refresh the list
       resetForm();
       setShowForm(false);
-      
     } catch (error) {
       console.error('❌ Failed to save bill to backend:', error);
       alert('Failed to save bill. Please try again.');

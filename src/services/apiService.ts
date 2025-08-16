@@ -1,4 +1,5 @@
 import io from 'socket.io-client';
+import { useState, useEffect } from 'react';
 
 // Configuration - Environment-based URLs
 const isLocalhost = window.location.hostname === 'localhost' || 
@@ -171,8 +172,17 @@ class ApiService {
     return this.update('loading_slips', id, data);
   }
 
-  async deleteLoadingSlip(id: string) {
-    return this.delete('loading_slips', id);
+  // Parties
+  async getParties() {
+    return this.getAll('parties');
+  }
+
+  async createParty(data: any) {
+    return this.create('parties', data);
+  }
+
+  async updateParty(id: string, data: any) {
+    return this.update('parties', id, data);
   }
 
   // Memos
@@ -188,10 +198,6 @@ class ApiService {
     return this.update('memos', id, data);
   }
 
-  async deleteMemo(id: string) {
-    return this.delete('memos', id);
-  }
-
   // Bills
   async getBills() {
     return this.getAll('bills');
@@ -205,8 +211,25 @@ class ApiService {
     return this.update('bills', id, data);
   }
 
-  async deleteBill(id: string) {
-    return this.delete('bills', id);
+  // Suppliers
+  async getSuppliers() {
+    return this.getAll('suppliers');
+  }
+
+  async createSupplier(data: any) {
+    return this.create('suppliers', data);
+  }
+
+  async updateSupplier(id: string, data: any) {
+    return this.update('suppliers', id, data);
+  }
+
+  async deleteLoadingSlip(id: string) {
+    return this.delete('loading_slips', id);
+  }
+
+  async deleteSupplier(id: string) {
+    return this.delete('suppliers', id);
   }
 
   // Banking/Cashbook
@@ -226,39 +249,6 @@ class ApiService {
     return this.delete('bank_entries', id);
   }
 
-  // Parties
-  async getParties() {
-    return this.getAll('parties');
-  }
-
-  async createParty(data: any) {
-    return this.create('parties', data);
-  }
-
-  async updateParty(id: string, data: any) {
-    return this.update('parties', id, data);
-  }
-
-  async deleteParty(id: string) {
-    return this.delete('parties', id);
-  }
-
-  // Suppliers
-  async getSuppliers() {
-    return this.getAll('suppliers');
-  }
-
-  async createSupplier(data: any) {
-    return this.create('suppliers', data);
-  }
-
-  async updateSupplier(id: string, data: any) {
-    return this.update('suppliers', id, data);
-  }
-
-  async deleteSupplier(id: string) {
-    return this.delete('suppliers', id);
-  }
 
   // Counters
   async getCounters() {
@@ -293,32 +283,84 @@ class ApiService {
   async healthCheck() {
     return this.request('/health');
   }
+
+  // Force sync data to backend
+  async syncToBackend(key: string, data: any[]): Promise<void> {
+    const endpointMap: { [key: string]: string } = {
+      'loadingSlips': 'loading_slips',
+      'memos': 'memos',
+      'bills': 'bills',
+      'parties': 'parties', 
+      'suppliers': 'suppliers',
+      'bankEntries': 'bank_entries'
+    };
+
+    const endpoint = endpointMap[key];
+    if (!endpoint) {
+      console.warn(`⚠️ No endpoint mapping found for key: ${key}`);
+      return;
+    }
+
+    console.log(`🔄 Force syncing ${key} to backend:`, data.length, 'items');
+
+    // Sync each item to backend
+    for (const item of data) {
+      if (item.id) {
+        try {
+          await this.update(endpoint, item.id, item);
+          console.log(`✅ Synced ${endpoint}:`, item.id);
+        } catch (error) {
+          try {
+            await this.create(endpoint, item);
+            console.log(`✅ Created ${endpoint}:`, item.id);
+          } catch (createError) {
+            console.error(`❌ Failed to sync ${endpoint}:`, createError);
+          }
+        }
+      }
+    }
+  }
 }
 
 export const apiService = new ApiService();
 
-// Real-time data synchronization hooks
+// Enhanced real-time data synchronization hooks with retry mechanism
 export const useRealTimeSync = (tableName: string, callback: (data: any[]) => void) => {
   const socket = getSocket();
   
-  // Listen for real-time updates
+  // Enhanced error handling and retry mechanism
+  const refreshDataWithRetry = async (retryCount = 0) => {
+    try {
+      const data = await apiService.getAll(tableName);
+      callback(data);
+      console.log(`✅ Successfully refreshed ${tableName} data`);
+    } catch (error) {
+      console.error(`❌ Failed to refresh ${tableName} data:`, error);
+      if (retryCount < 3) {
+        console.log(`🔄 Retrying ${tableName} refresh in 2 seconds... (attempt ${retryCount + 1}/3)`);
+        setTimeout(() => refreshDataWithRetry(retryCount + 1), 2000);
+      }
+    }
+  };
+  
+  // Listen for real-time updates with enhanced logging
   socket.on(`${tableName}_created`, (data: any) => {
-    console.log(`New ${tableName} created:`, data);
-    // Refresh data
-    apiService.getAll(tableName).then(callback);
+    console.log(`📥 New ${tableName} created from another device:`, data);
+    refreshDataWithRetry();
   });
 
   socket.on(`${tableName}_updated`, (data: any) => {
-    console.log(`${tableName} updated:`, data);
-    // Refresh data
-    apiService.getAll(tableName).then(callback);
+    console.log(`📥 ${tableName} updated from another device:`, data);
+    refreshDataWithRetry();
   });
 
   socket.on(`${tableName}_deleted`, (data: any) => {
-    console.log(`${tableName} deleted:`, data);
-    // Refresh data
-    apiService.getAll(tableName).then(callback);
+    console.log(`📥 ${tableName} deleted from another device:`, data);
+    refreshDataWithRetry();
   });
+
+  // Initial data load
+  refreshDataWithRetry();
 
   // Cleanup function
   return () => {
@@ -326,4 +368,41 @@ export const useRealTimeSync = (tableName: string, callback: (data: any[]) => vo
     socket.off(`${tableName}_updated`);
     socket.off(`${tableName}_deleted`);
   };
+};
+
+// Enhanced sync status monitoring
+export const useSyncStatus = () => {
+  const [isConnected, setIsConnected] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+  
+  useEffect(() => {
+    const socket = getSocket();
+    
+    const handleConnect = () => {
+      setIsConnected(true);
+      setLastSyncTime(new Date());
+      console.log('✅ Real-time sync connected');
+    };
+    
+    const handleDisconnect = () => {
+      setIsConnected(false);
+      console.log('❌ Real-time sync disconnected');
+    };
+    
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    
+    // Set initial state
+    setIsConnected(socket.connected);
+    if (socket.connected) {
+      setLastSyncTime(new Date());
+    }
+    
+    return () => {
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+    };
+  }, []);
+  
+  return { isConnected, lastSyncTime };
 };

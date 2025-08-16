@@ -12,10 +12,26 @@ import { initializeLocationSuggestionsFromExistingData } from '../utils/location
 import DateInput from './DateInput';
 import AutoCompleteLocationInput from './AutoCompleteLocationInput';
 import DragDropInput from './DragDropInput';
-import { apiService } from '../services/apiService';
+import { apiService, useRealTimeSync } from '../services/apiService';
 
 const Memo: React.FC = () => {
-  const [memos, setMemos] = useLocalStorage<MemoType[]>(STORAGE_KEYS.MEMOS, []);
+  const [memos, setMemos] = useState<MemoType[]>([]);
+
+  // Load data from API and set up real-time sync
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const data = await apiService.getMemos();
+        setMemos(data);
+      } catch (error) {
+        console.error('Error loading memos:', error);
+      }
+    };
+    loadData();
+  }, []);
+
+  // Set up real-time sync
+  useRealTimeSync('memos', setMemos);
   const [suppliers, setSuppliers] = useLocalStorage<Supplier[]>(STORAGE_KEYS.SUPPLIERS, []);
   const [paidMemos, setPaidMemos] = useLocalStorage<MemoType[]>(STORAGE_KEYS.PAID_MEMOS, []);
   const { getNextNumber, getNextNumberPreview, updateCounterIfHigher } = useCounters();

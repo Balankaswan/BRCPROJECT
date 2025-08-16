@@ -267,34 +267,44 @@ const LoadingSlip: React.FC = () => {
     }
   };
 
-  const createMemoFromSlip = (slip: LoadingSlipType) => {
+  const createMemoFromSlip = async (slip: LoadingSlipType) => {
     // Find or create supplier using supplierDetail, not partyName
     let supplier = suppliers.find(s => s.name.toLowerCase() === slip.supplierDetail.toLowerCase());
-    if (!supplier && slip.supplierDetail.trim()) {
-      const newSupplier = {
+    if (!supplier) {
+      supplier = {
         id: Date.now().toString(),
         name: slip.supplierDetail,
         balance: 0,
         activeTrips: 0,
         createdAt: new Date().toISOString()
       };
-      supplier = newSupplier;
-      setSuppliers(prev => [...prev, newSupplier]);
+      // Create supplier via API first
+      try {
+        const backendSupplier = {
+          name: supplier.name,
+          balance: supplier.balance,
+          activeTrips: supplier.activeTrips,
+          createdAt: supplier.createdAt
+        };
+        await apiService.createSupplier(backendSupplier);
+        console.log('✅ Supplier created via backend API');
+      } catch (error) {
+        console.warn('⚠️ Failed to create supplier via API, using localStorage:', error);
+        setSuppliers(prev => [...prev, supplier!]);
+      }
     }
 
-    // If no supplier found and no supplierDetail provided, show error
-    if (!supplier) {
-      alert('Cannot create memo: No supplier detail provided in Loading Slip');
-      return;
-    }
-
-    const freight = slip.freight;
+    const freight = parseFloat(slip.freight.toString());
     const commission = calculateCommission(freight);
     const mamul = 0; // Default mamul
     const detention = 0; // Default detention
-    // Do not pre-fill advance amount - keep it empty for manual entry
-    const advances: Advance[] = [];
-    const balance = calculateMemoBalance(freight, advances, commission, mamul, detention, 0, 0); // RTO and Extra Charge default to 0
+    const advances = slip.advanceAmount ? [{
+      id: Date.now().toString(),
+      date: slip.date,
+      amount: parseFloat(slip.advanceAmount.toString()),
+      narration: 'Advance from loading slip'
+    }] : [];
+    const balance = calculateMemoBalance(freight, advances, commission, mamul, detention, 0, 0);
 
     const memo: Memo = {
       id: Date.now().toString(),
@@ -321,15 +331,94 @@ const LoadingSlip: React.FC = () => {
       createdAt: new Date().toISOString()
     };
 
-    setMemos(prev => [...prev, memo]);
-
-    // Update loading slip with linked memo number
-    setLoadingSlips(prev => prev.map(s => s.id === slip.id ? { ...s, linkedMemoNo: memo.memoNo } : s));
-
-    alert(`Memo ${memo.memoNo} created successfully!`);
+    try {
+      console.log('🚀 Creating memo via backend API...', memo);
+      
+      // Create memo via API with proper backend schema mapping
+      const backendMemo = {
+        memoNumber: memo.memoNo,
+        loadingDate: memo.loadingDate,
+        from_location: memo.from,
+        to_location: memo.to,
+        supplierName: memo.supplierName,
+        partyName: memo.partyName,
+        vehicleNumber: memo.vehicle,
+        weight: memo.weight,
+        materialType: memo.material,
+        freight: memo.freight,
+        mamul: memo.mamul,
+        detention: memo.detention,
+        extraCharge: memo.extraCharge,
+        commissionPercentage: 6, // Default commission percentage
+        commission: memo.commission,
+        balance: memo.balance,
+        status: memo.status,
+        advances: memo.advances,
+        notes: memo.notes,
+        createdAt: memo.createdAt
+      };
+      
+      const createdMemo = await apiService.createMemo(backendMemo);
+      console.log('✅ Memo created via backend API:', createdMemo);
+      
+      // Update loading slip with linked memo number via API
+      const updatedSlip = { ...slip, linkedMemoNo: memo.memoNo };
+      const backendSlip = {
+        slipNumber: updatedSlip.slipNo,
+        loadingDate: updatedSlip.date,
+        vehicleNumber: updatedSlip.vehicleNo,
+        from_location: updatedSlip.from,
+        to_location: updatedSlip.to,
+        partyName: updatedSlip.partyName,
+        partyPersonName: updatedSlip.partyPersonName,
+        supplierDetail: updatedSlip.supplierDetail,
+        materialType: updatedSlip.material,
+        weight: updatedSlip.weight,
+        dimensions: updatedSlip.dimensions,
+        freight: updatedSlip.freight,
+        rtoAmount: updatedSlip.rtoAmount,
+        advanceAmount: updatedSlip.advanceAmount,
+        linkedMemoNo: memo.memoNo,
+        createdAt: updatedSlip.createdAt
+      };
+      
+      await apiService.updateLoadingSlip(slip.id, backendSlip);
+      console.log('✅ Loading slip updated with memo link via backend API');
+      
+      // Wait a moment for real-time sync to propagate
+      setTimeout(async () => {
+        try {
+          // Refresh data from API to ensure consistency
+          const [updatedLoadingSlips, updatedMemos] = await Promise.all([
+            apiService.getLoadingSlips(),
+            apiService.getMemos()
+          ]);
+          setLoadingSlips(updatedLoadingSlips);
+          setMemos(updatedMemos);
+          console.log('✅ Data refreshed from API after memo creation');
+        } catch (refreshError) {
+          console.warn('⚠️ Failed to refresh data from API:', refreshError);
+        }
+      }, 1000);
+      
+      alert(`Memo ${memo.memoNo} created successfully and linked to loading slip!`);
+    } catch (error) {
+      console.error('❌ Failed to create memo via API:', error);
+      
+      // Fallback to localStorage with enhanced error handling
+      try {
+        setMemos(prev => [...prev, memo]);
+        setLoadingSlips(prev => prev.map(s => s.id === slip.id ? { ...s, linkedMemoNo: memo.memoNo } : s));
+        console.log('✅ Memo created in localStorage as fallback');
+        alert(`Memo ${memo.memoNo} created successfully (offline mode)!`);
+      } catch (localError) {
+        console.error('❌ Failed to create memo even in localStorage:', localError);
+        alert('Failed to create memo. Please try again.');
+      }
+    }
   };
 
-  const createBillFromSlip = (slip: LoadingSlipType) => {
+  const createBillFromSlip = async (slip: LoadingSlipType) => {
     // Find or create party
     let party = parties.find(p => p.name.toLowerCase() === slip.partyName.toLowerCase());
     if (!party) {

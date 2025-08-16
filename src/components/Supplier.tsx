@@ -1,13 +1,13 @@
-import React, { useState } from 'react';
-import { Plus, Edit, Trash2, Eye, Search, Download } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus, Edit, Trash2, Search, Eye } from 'lucide-react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { STORAGE_KEYS } from '../utils/storage';
 import { Supplier as SupplierType, Memo } from '../types';
-import { formatCurrency, formatDate, calculateSupplierBalance, synchronizeSupplierBalances } from '../utils/calculations';
-
+import { formatCurrency, formatDate } from '../utils/calculations';
+import { apiService, useRealTimeSync } from '../services/apiService';
 
 const Supplier: React.FC = () => {
-  const [suppliers, setSuppliers] = useLocalStorage<SupplierType[]>(STORAGE_KEYS.SUPPLIERS, []);
+  const [suppliers, setSuppliers] = useState<SupplierType[]>([]);
   const [memos] = useLocalStorage<Memo[]>(STORAGE_KEYS.MEMOS, []);
   const [paidMemos] = useLocalStorage<Memo[]>(STORAGE_KEYS.PAID_MEMOS, []);
   const [showForm, setShowForm] = useState(false);
@@ -15,13 +15,45 @@ const Supplier: React.FC = () => {
   const [selectedSupplier, setSelectedSupplier] = useState<SupplierType | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
+  // Load data from API and set up real-time sync
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const data = await apiService.getSuppliers();
+        setSuppliers(data);
+      } catch (error) {
+        console.error('Error loading suppliers:', error);
+      }
+    };
+    loadData();
+  }, []);
+
+  // Set up real-time sync
+  useRealTimeSync('suppliers', setSuppliers);
+
   const [formData, setFormData] = useState({
     name: '',
     mobile: '',
     address: ''
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Calculate supplier balance from memos
+  const calculateSupplierBalance = (supplier: SupplierType, memos: Memo[]): number => {
+    return memos
+      .filter(memo => memo.supplierId === supplier.id && memo.status === 'pending')
+      .reduce((sum, memo) => sum + memo.balance, 0);
+  };
+
+  // Synchronize supplier balances with memo balances
+  const synchronizeSupplierBalances = (suppliers: SupplierType[], memos: Memo[]): SupplierType[] => {
+    return suppliers.map(supplier => ({
+      ...supplier,
+      balance: calculateSupplierBalance(supplier, memos),
+      activeTrips: memos.filter(memo => memo.supplierId === supplier.id && memo.status === 'pending').length
+    }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     const supplier: SupplierType = {
@@ -34,10 +66,31 @@ const Supplier: React.FC = () => {
       createdAt: editingSupplier?.createdAt || new Date().toISOString()
     };
 
-    if (editingSupplier) {
-      setSuppliers(prev => prev.map(s => s.id === editingSupplier.id ? supplier : s));
-    } else {
-      setSuppliers(prev => [...prev, supplier]);
+    try {
+      if (editingSupplier) {
+        // Update supplier via API
+        await apiService.updateSupplier(editingSupplier.id, supplier);
+        console.log('✅ Supplier updated via backend API');
+      } else {
+        // Create supplier via API
+        await apiService.createSupplier(supplier);
+        console.log('✅ Supplier created via backend API');
+      }
+      
+      // Refresh data from API
+      const updatedData = await apiService.getSuppliers();
+      setSuppliers(updatedData);
+      
+    } catch (error) {
+      console.error('❌ Failed to save supplier via API:', error);
+      
+      // Fallback to localStorage
+      if (editingSupplier) {
+        setSuppliers(prev => prev.map(s => s.id === editingSupplier.id ? supplier : s));
+      } else {
+        setSuppliers(prev => [...prev, supplier]);
+      }
+      console.log('✅ Supplier saved to localStorage as fallback');
     }
 
     resetForm();
@@ -63,9 +116,22 @@ const Supplier: React.FC = () => {
     setShowForm(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Are you sure you want to delete this supplier?')) {
-      setSuppliers(prev => prev.filter(s => s.id !== id));
+      try {
+        await apiService.deleteSupplier(id);
+        console.log('✅ Supplier deleted via backend API');
+        
+        // Refresh data from API
+        const updatedData = await apiService.getSuppliers();
+        setSuppliers(updatedData);
+      } catch (error) {
+        console.error('❌ Failed to delete supplier via API:', error);
+        
+        // Fallback to localStorage
+        setSuppliers(prev => prev.filter(s => s.id !== id));
+        console.log('✅ Supplier deleted from localStorage as fallback');
+      }
     }
   };
 
@@ -100,19 +166,25 @@ const Supplier: React.FC = () => {
     }
   };
 
-
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Supplier Management</h1>
-        <button
-          onClick={() => setShowForm(true)}
-          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          Add Supplier
-        </button>
+        <div className="flex space-x-2">
+          <button
+            onClick={handleSyncSupplierBalances}
+            className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            Sync Balances
+          </button>
+          <button
+            onClick={() => setShowForm(true)}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Add Supplier
+          </button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -348,7 +420,7 @@ const Supplier: React.FC = () => {
                     </div>
 
                     {/* Advances */}
-                    {memo.advances.length > 0 && (
+                    {memo.advances && memo.advances.length > 0 && (
                       <div className="bg-gray-50 p-3 rounded">
                         <h5 className="text-sm font-medium text-gray-700 mb-2">Advances:</h5>
                         <div className="space-y-1">
