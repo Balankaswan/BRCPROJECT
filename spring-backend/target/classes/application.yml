@@ -1,19 +1,13 @@
 server:
   address: 0.0.0.0  # Bind to all network interfaces for LAN access
-  port: 8080
+  port: 8081
   servlet:
     context-path: /api
 
 spring:
   data:
     mongodb:
-      host: localhost
-      port: 27017
-      database: transport_management
-      # authentication:
-      #   username: ${MONGO_USERNAME:admin}
-      #   password: ${MONGO_PASSWORD:password}
-      #   authentication-database: admin
+      uri: mongodb+srv://balankaswan14:Balan30@brcmanagement.xyhobwb.mongodb.net/transport_management?retryWrites=true&w=majority&appName=BRCMANAGEMENT
   
   application:
     name: transport-management-system

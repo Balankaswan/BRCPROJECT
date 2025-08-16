@@ -1,4 +1,8 @@
-require('dotenv').config();
+try {
+  require('dotenv').config();
+} catch (error) {
+  console.log('dotenv not available, using environment variables directly');
+}
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');

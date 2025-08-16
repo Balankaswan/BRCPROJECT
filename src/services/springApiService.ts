@@ -2,8 +2,8 @@ import SockJS from 'sockjs-client';
 import { Client } from '@stomp/stompjs';
 
 // Configuration - Use Spring Boot backend on LAN IP for multi-device access
-const API_BASE_URL = 'http://192.168.1.3:8080/api';
-const WEBSOCKET_URL = 'http://192.168.1.3:8080/ws';
+const API_BASE_URL = 'http://192.168.1.3:8081/api';
+const WEBSOCKET_URL = 'http://192.168.1.3:8081/ws';
 
 console.log('🌐 API Base URL:', API_BASE_URL);
 console.log('🔌 WebSocket URL:', WEBSOCKET_URL);
