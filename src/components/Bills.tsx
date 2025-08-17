@@ -8,10 +8,12 @@ import { generateBillPDF } from '../utils/pdfGenerator';
 import { validateBillForm } from '../utils/validation';
 import { updatePartyLedgerForBill } from '../utils/autoLedgerManager';
 import { initializeLocationSuggestionsFromExistingData } from '../utils/locationSuggestions';
+import { updatePartyLedger } from '../utils/ledgerUtils';
 import { usePDFPreviewModal } from '../hooks/usePDFPreviewModal';
 import { useCounters } from '../hooks/useCounters';
 import DateInput from './DateInput';
 import AutoCompleteLocationInput from './AutoCompleteLocationInput';
+import DragDropInput from './DragDropInput';
 import BillPaymentModal from './BillPaymentModal';
 import PDFPreviewModal from './PDFPreviewModal';
 import { apiService, useRealTimeSync } from '../services/apiService';
@@ -40,7 +42,7 @@ const Bills: React.FC = () => {
     };
   }, [setBills]);
   const [parties, setParties] = useLocalStorage<Party[]>(STORAGE_KEYS.PARTIES, []);
-  const [, setReceivedBills] = useLocalStorage<Bill[]>(STORAGE_KEYS.RECEIVED_BILLS, []);
+  const [partyLedgers, setPartyLedgers] = useLocalStorage<PartyLedger[]>(STORAGE_KEYS.PARTY_LEDGERS, []);
   const [bankEntries] = useLocalStorage<BankEntry[]>(STORAGE_KEYS.BANK_ENTRIES, []);
   const [, setPods] = useLocalStorage<POD[]>(STORAGE_KEYS.PODS, []);
   const { getNextNumber, getNextNumberPreview, updateCounterIfHigher } = useCounters();
@@ -51,7 +53,6 @@ const Bills: React.FC = () => {
   const [showPODForm, setShowPODForm] = useState<string | null>(null);
   const [showPaymentModal, setShowPaymentModal] = useState<Bill | null>(null);
   const [, setBillPayments] = useLocalStorage<BillPayment[]>(STORAGE_KEYS.BILL_PAYMENTS, []);
-  const [partyLedgers, setPartyLedgers] = useLocalStorage<PartyLedger[]>(STORAGE_KEYS.PARTY_LEDGERS, []);
   const [searchTerm, setSearchTerm] = useState('');
   const [previewBill, setPreviewBill] = useState<Bill | null>(null);
   const { isOpen: isPreviewOpen, openModal: openPreview, closeModal: closePreview } = usePDFPreviewModal();
@@ -172,7 +173,7 @@ const Bills: React.FC = () => {
         extraCharges
       ),
       status: 'pending' as const,
-      receivedDate: null,
+      receivedDate: undefined,
       receivedAmount: 0,
       advances: editingBill?.advances || [],
       payments: editingBill?.payments || [],
@@ -192,6 +193,31 @@ const Bills: React.FC = () => {
       } else {
         await apiService.createBill(bill);
         console.log('✅ Bill created successfully via backend API');
+        
+        // Update party ledger for new bill
+        const party = parties.find(p => p.id === formData.partyId);
+        if (party) {
+          const updatedLedgers = updatePartyLedger(
+            partyLedgers,
+            party,
+            [bill],
+            bankEntries
+          );
+          setPartyLedgers(updatedLedgers);
+          
+          // Update party balance: credit total bill amount, debit advances
+          const totalBillAmount = totalFreight + detention + finalRtoAmount + extraCharges;
+          const totalAdvances = bill.advances?.reduce((sum: number, adv: any) => sum + adv.amount, 0) || 0;
+          const newBalance = totalBillAmount - totalAdvances;
+          
+          setParties(prev => prev.map(p => 
+            p.id === party.id 
+              ? { ...p, balance: p.balance + newBalance, activeTrips: p.activeTrips + 1 }
+              : p
+          ));
+          
+          console.log('✅ Party ledger updated for bill creation');
+        }
       }
 
       // The Socket.io listeners will automatically refresh the list
@@ -375,10 +401,12 @@ const handleAddAdvance = (billId: string) => {
           updatedAt: new Date().toISOString(),
         });
 
-        // Optimistic local updates
-        const receivedBill = { ...bill, status: 'received' as const, receivedDate, receivedNarration: narration };
-        setReceivedBills(prev => [...prev, receivedBill]);
-        setBills(prev => prev.filter(b => b.id !== bill.id));
+        // Optimistic local updates - update bill status in place
+        setBills(prev => prev.map(b => 
+          b.id === bill.id 
+            ? { ...b, status: 'received' as const, receivedDate, receivedNarration: narration }
+            : b
+        ));
 
         // Update party balance
         setParties(prev => prev.map(party => 
@@ -479,11 +507,10 @@ const handleAddAdvance = (billId: string) => {
         : party
     ));
     
-    // If bill is fully paid or settled, move to received bills
-    if (updatedBill.status === 'fully_paid' || updatedBill.status === 'settled_with_deductions') {
-      setReceivedBills(prev => [...prev, updatedBill]);
-      setBills(prev => prev.filter(b => b.id !== updatedBill.id));
-    }
+    // Update bill status in place (bills remain in the same list with updated status)
+    setBills(prev => prev.map(b => 
+      b.id === updatedBill.id ? updatedBill : b
+    ));
     
     alert(`Payment processed successfully! Status: ${updatedBill.status}`);
   };

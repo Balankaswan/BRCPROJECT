@@ -139,6 +139,31 @@ class ApiService {
     });
   }
 
+  // Ledger operations
+  async getPartyLedgers() {
+    return this.getAll('party_ledgers');
+  }
+
+  async getSupplierLedgers() {
+    return this.getAll('supplier_ledgers');
+  }
+
+  async createPartyLedger(data: any) {
+    return this.create('party_ledgers', data);
+  }
+
+  async createSupplierLedger(data: any) {
+    return this.create('supplier_ledgers', data);
+  }
+
+  async updatePartyLedger(id: string, data: any) {
+    return this.update('party_ledgers', id, data);
+  }
+
+  async updateSupplierLedger(id: string, data: any) {
+    return this.update('supplier_ledgers', id, data);
+  }
+
   // Specific methods for each entity
   
   // Loading Slips
@@ -338,6 +363,20 @@ class ApiService {
 
   async createBankEntry(data: any) {
     return this.create('bank_entries', data);
+  }
+
+  async createBankEntryWithLedgerUpdate(data: any) {
+    // Create bank entry and trigger ledger updates
+    const result = await this.create('bank_entries', data);
+    
+    // Trigger ledger recalculation on backend
+    if (data.category === 'bill' && data.relatedId) {
+      await this.request(`/ledgers/party/${data.relatedId}/recalculate`, { method: 'POST' });
+    } else if (data.category === 'memo' && data.relatedId) {
+      await this.request(`/ledgers/supplier/${data.relatedId}/recalculate`, { method: 'POST' });
+    }
+    
+    return result;
   }
 
   async updateBankEntry(id: string, data: any) {

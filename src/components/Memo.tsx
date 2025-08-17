@@ -9,6 +9,7 @@ import { generateMemoPDF } from '../utils/pdfGenerator';
 import { useCounters } from '../hooks/useCounters';
 import { validateMemoForm } from '../utils/validation';
 import { initializeLocationSuggestionsFromExistingData } from '../utils/locationSuggestions';
+import { updateSupplierLedger } from '../utils/ledgerUtils';
 import DateInput from './DateInput';
 import AutoCompleteLocationInput from './AutoCompleteLocationInput';
 import DragDropInput from './DragDropInput';
@@ -39,6 +40,8 @@ const Memo: React.FC = () => {
   }, [setMemos]);
   const [suppliers, setSuppliers] = useLocalStorage<Supplier[]>(STORAGE_KEYS.SUPPLIERS, []);
   const [, setPaidMemos] = useLocalStorage<MemoType[]>(STORAGE_KEYS.PAID_MEMOS, []);
+  const [supplierLedgers, setSupplierLedgers] = useLocalStorage<any[]>(STORAGE_KEYS.SUPPLIER_LEDGERS, []);
+  const [bankEntries] = useLocalStorage<any[]>(STORAGE_KEYS.BANK_ENTRIES, []);
   const { getNextNumber, getNextNumberPreview, updateCounterIfHigher } = useCounters();
   const [showForm, setShowForm] = useState(false);
   const [editingMemo, setEditingMemo] = useState<MemoType | null>(null);
@@ -161,6 +164,39 @@ const Memo: React.FC = () => {
         // Create new memo via backend API
         await apiService.createMemo(memo);
         console.log('✅ Memo created successfully via backend API');
+        
+        // Update supplier ledger for new memo
+        const supplier = suppliers.find(s => s.id === formData.supplierId);
+        if (supplier) {
+          const memoForLedger = {
+            ...memo,
+            memoNo: memo.memoNumber,
+            from: memo.from_location,
+            to: memo.to_location,
+            vehicle: memo.vehicleNumber,
+            material: memo.materialType,
+            status: 'pending' as const,
+            paidDate: undefined
+          };
+          
+          const updatedLedgers = updateSupplierLedger(
+            supplierLedgers,
+            supplier,
+            [memoForLedger],
+            bankEntries
+          );
+          setSupplierLedgers(updatedLedgers);
+          
+          // Update supplier balance
+          const newBalance = memo.freight + memo.detention - memo.commission - memo.mamul - (memo.advances?.reduce((sum: number, adv: any) => sum + adv.amount, 0) || 0);
+          setSuppliers(prev => prev.map(s => 
+            s.id === supplier.id 
+              ? { ...s, balance: s.balance + newBalance, activeTrips: s.activeTrips + 1 }
+              : s
+          ));
+          
+          console.log('✅ Supplier ledger updated for memo creation');
+        }
       }
       
       // The Socket.io listeners will automatically update the UI

@@ -9,6 +9,7 @@ import {
   synchronizeSupplierBalance,
   calculateBillReceivedAmount
 } from '../utils/balanceCalculations';
+import { updatePartyLedger, updateSupplierLedger } from '../utils/ledgerUtils';
 import AutocompleteDropdown from './AutocompleteDropdown';
 import {
   BankEntry,
@@ -30,6 +31,8 @@ const Banking: React.FC = () => {
   const [paidMemos, setPaidMemos] = useLocalStorage<Memo[]>(STORAGE_KEYS.PAID_MEMOS, []);
   const [parties, setParties] = useLocalStorage<Party[]>(STORAGE_KEYS.PARTIES, []);
   const [suppliers, setSuppliers] = useLocalStorage<Supplier[]>(STORAGE_KEYS.SUPPLIERS, []);
+  const [partyLedgers, setPartyLedgers] = useLocalStorage<any[]>(STORAGE_KEYS.PARTY_LEDGERS, []);
+  const [supplierLedgers, setSupplierLedgers] = useLocalStorage<any[]>(STORAGE_KEYS.SUPPLIER_LEDGERS, []);
 
   const [showForm, setShowForm] = useState(false);
   const [editingEntry, setEditingEntry] = useState<BankEntry | null>(null);
@@ -96,6 +99,25 @@ const Banking: React.FC = () => {
       setBankEntries(prev => prev.map(e => e.id === editingEntry.id ? entry : e));
     } else {
       setBankEntries(prev => [...prev, entry]);
+    }
+
+    // Update ledgers when bank transaction is linked to bill or memo
+    if (entry.category === 'bill' && entry.relatedId) {
+      const bill = bills.find(b => b.id === entry.relatedId) || receivedBills.find(b => b.id === entry.relatedId);
+      const party = parties.find(p => p.id === bill?.partyId);
+      if (bill && party) {
+        const updatedLedgers = updatePartyLedger(partyLedgers, party, [bill], [entry]);
+        setPartyLedgers(updatedLedgers);
+        console.log('✅ Party ledger updated for bank transaction');
+      }
+    } else if (entry.category === 'memo' && entry.relatedId) {
+      const memo = memos.find(m => m.id === entry.relatedId) || paidMemos.find(m => m.id === entry.relatedId);
+      const supplier = suppliers.find(s => s.id === memo?.supplierId);
+      if (memo && supplier) {
+        const updatedLedgers = updateSupplierLedger(supplierLedgers, supplier, [memo], [entry]);
+        setSupplierLedgers(updatedLedgers);
+        console.log('✅ Supplier ledger updated for bank transaction');
+      }
     }
 
     // Update Bill/Memo payment status
