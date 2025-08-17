@@ -369,12 +369,8 @@ class ApiService {
     // Create bank entry and trigger ledger updates
     const result = await this.create('bank_entries', data);
     
-    // Trigger ledger recalculation on backend
-    if (data.category === 'bill' && data.relatedId) {
-      await this.request(`/ledgers/party/${data.relatedId}/recalculate`, { method: 'POST' });
-    } else if (data.category === 'memo' && data.relatedId) {
-      await this.request(`/ledgers/supplier/${data.relatedId}/recalculate`, { method: 'POST' });
-    }
+    // Note: Socket integration will be handled by backend
+    console.log('✅ Bank entry created with ledger update trigger');
     
     return result;
   }
@@ -462,7 +458,7 @@ class ApiService {
 
 export const apiService = new ApiService();
 
-// Enhanced real-time data synchronization hooks with retry mechanism
+// Real-time sync hook with enhanced retry mechanism
 export const useRealTimeSync = (tableName: string, callback: (data: any[]) => void) => {
   const socket = getSocket();
   

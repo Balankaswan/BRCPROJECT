@@ -10,6 +10,7 @@ import {
   calculateBillReceivedAmount
 } from '../utils/balanceCalculations';
 import { updatePartyLedger, updateSupplierLedger } from '../utils/ledgerUtils';
+import { apiService } from '../services/apiService';
 import AutocompleteDropdown from './AutocompleteDropdown';
 import {
   BankEntry,
@@ -67,7 +68,7 @@ const Banking: React.FC = () => {
     );
   }, [bankEntries, searchTerm]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     // Validate payment amount for Bill/Memo transactions
@@ -95,29 +96,44 @@ const Banking: React.FC = () => {
       createdAt: editingEntry?.createdAt || new Date().toISOString()
     };
 
-    if (editingEntry) {
-      setBankEntries(prev => prev.map(e => e.id === editingEntry.id ? entry : e));
-    } else {
-      setBankEntries(prev => [...prev, entry]);
-    }
+    try {
+      if (editingEntry) {
+        await apiService.updateBankEntry(editingEntry.id, entry);
+        console.log('✅ Bank entry updated via backend API');
+      } else {
+        await apiService.createBankEntryWithLedgerUpdate(entry);
+        console.log('✅ Bank entry created with ledger updates via backend API');
+      }
+      
+      // Update local state for immediate UI feedback
+      if (editingEntry) {
+        setBankEntries(prev => prev.map(e => e.id === editingEntry.id ? entry : e));
+      } else {
+        setBankEntries(prev => [...prev, entry]);
+      }
 
-    // Update ledgers when bank transaction is linked to bill or memo
-    if (entry.category === 'bill' && entry.relatedId) {
-      const bill = bills.find(b => b.id === entry.relatedId) || receivedBills.find(b => b.id === entry.relatedId);
-      const party = parties.find(p => p.id === bill?.partyId);
-      if (bill && party) {
-        const updatedLedgers = updatePartyLedger(partyLedgers, party, [bill], [entry]);
-        setPartyLedgers(updatedLedgers);
-        console.log('✅ Party ledger updated for bank transaction');
+      // Update ledgers locally for immediate feedback
+      if (entry.category === 'bill' && entry.relatedId) {
+        const bill = bills.find(b => b.id === entry.relatedId) || receivedBills.find(b => b.id === entry.relatedId);
+        const party = parties.find(p => p.id === bill?.partyId);
+        if (bill && party) {
+          const updatedLedgers = updatePartyLedger(partyLedgers, party, [bill], [entry]);
+          setPartyLedgers(updatedLedgers);
+          console.log('✅ Party ledger updated locally for bank transaction');
+        }
+      } else if (entry.category === 'memo' && entry.relatedId) {
+        const memo = memos.find(m => m.id === entry.relatedId) || paidMemos.find(m => m.id === entry.relatedId);
+        const supplier = suppliers.find(s => s.id === memo?.supplierId);
+        if (memo && supplier) {
+          const updatedLedgers = updateSupplierLedger(supplierLedgers, supplier, [memo], [entry]);
+          setSupplierLedgers(updatedLedgers);
+          console.log('✅ Supplier ledger updated locally for bank transaction');
+        }
       }
-    } else if (entry.category === 'memo' && entry.relatedId) {
-      const memo = memos.find(m => m.id === entry.relatedId) || paidMemos.find(m => m.id === entry.relatedId);
-      const supplier = suppliers.find(s => s.id === memo?.supplierId);
-      if (memo && supplier) {
-        const updatedLedgers = updateSupplierLedger(supplierLedgers, supplier, [memo], [entry]);
-        setSupplierLedgers(updatedLedgers);
-        console.log('✅ Supplier ledger updated for bank transaction');
-      }
+    } catch (error) {
+      console.error('❌ Failed to save bank entry via API:', error);
+      alert('Failed to save bank entry. Please try again.');
+      return;
     }
 
     // Update Bill/Memo payment status

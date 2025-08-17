@@ -8,7 +8,7 @@ import { apiService, useRealTimeSync } from '../services/apiService';
 
 const Supplier: React.FC = () => {
   const [suppliers, setSuppliers] = useState<SupplierType[]>([]);
-  const [memos] = useLocalStorage<Memo[]>(STORAGE_KEYS.MEMOS, []);
+  const [memos, setMemos] = useLocalStorage<Memo[]>(STORAGE_KEYS.MEMOS, []);
   const [paidMemos] = useLocalStorage<Memo[]>(STORAGE_KEYS.PAID_MEMOS, []);
   const [showForm, setShowForm] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<SupplierType | null>(null);
@@ -28,8 +28,21 @@ const Supplier: React.FC = () => {
     loadData();
   }, []);
 
-  // Set up real-time sync
-  useRealTimeSync('suppliers', setSuppliers);
+  // Set up real-time sync with cleanup to avoid duplicate listeners
+  useEffect(() => {
+    const unsubscribe = useRealTimeSync('suppliers', setSuppliers);
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
+  }, [setSuppliers]);
+  
+  // Set up real-time sync for memos
+  useEffect(() => {
+    const unsubscribe = useRealTimeSync('memos', setMemos);
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
+  }, [setMemos]);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -117,6 +130,11 @@ const Supplier: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
+    if (!id || id === 'undefined') {
+      alert('Cannot delete supplier: Invalid ID');
+      return;
+    }
+    
     if (confirm('Are you sure you want to delete this supplier?')) {
       try {
         await apiService.deleteSupplier(id);
