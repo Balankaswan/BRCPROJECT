@@ -869,30 +869,9 @@ const LoadingSlip: React.FC = () => {
       }
 
       console.log('✅ Bill created and linked to loading slip');
-      // Create party ledger entry for bill
-      try {
-        await apiService.createPartyLedger({
-          partyId: party!.id,
-          partyName: party!.name,
-          type: 'bill_debit',
-          entryType: 'debit',
-          date: bill.billDate,
-          billNo: bill.billNo,
-          billDate: bill.billDate,
-          particulars: `Bill ${bill.billNo} - ${bill.trips[0]?.from} to ${bill.trips[0]?.to}`,
-          debitAmount: bill.trips.reduce((sum: number, trip: any) => sum + trip.freight, 0),
-          creditAmount: 0,
-          runningBalance: 0, // Will be calculated by backend
-          billAmount: bill.trips.reduce((sum: number, trip: any) => sum + trip.freight, 0),
-          advance: bill.advances.reduce((sum: number, adv: any) => sum + adv.amount, 0),
-          balance: bill.balance
-        });
-        
-        console.log('✅ Party ledger entry created');
-      } catch (ledgerError) {
-        console.warn('⚠️ Failed to create party ledger entry:', ledgerError);
-      }
-      
+      // Note: Party ledger entries are now auto-generated from bills
+      // No need to create them manually via API calls
+      console.log('✅ Party ledger will be auto-generated from bill data');
       alert(`Bill ${bill.billNo} created successfully!`);
       
     } catch (error) {

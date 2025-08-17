@@ -466,12 +466,23 @@ export const useRealTimeSync = (tableName: string, callback: (data: any[]) => vo
   // Enhanced error handling and retry mechanism
   const refreshDataWithRetry = async (retryCount = 0) => {
     try {
+      // Only sync existing API endpoints to prevent 404 errors
+      const validEndpoints = ['loading_slips', 'memos', 'bills', 'parties', 'suppliers', 'bank_entries'];
+      
+      if (!validEndpoints.includes(tableName)) {
+        console.log(`⚠️ Skipping sync for non-existent endpoint: ${tableName}`);
+        return;
+      }
+
       // Use specific getters to keep frontend mapping consistent
       let data: any[] = [];
       if (tableName === 'loading_slips') data = await apiService.getLoadingSlips();
       else if (tableName === 'memos') data = await apiService.getMemos();
       else if (tableName === 'bills') data = await apiService.getBills();
+      else if (tableName === 'parties') data = await apiService.getParties();
+      else if (tableName === 'suppliers') data = await apiService.getSuppliers();
       else data = await apiService.getAll(tableName);
+      
       callback(data);
       console.log(`✅ Successfully refreshed ${tableName} data`);
     } catch (error) {

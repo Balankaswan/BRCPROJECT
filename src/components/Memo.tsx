@@ -366,12 +366,21 @@ const Memo: React.FC = () => {
       setPaidMemos(prev => [...prev, paidMemo]);
       setMemos(prev => prev.filter(m => m.id !== memo.id));
 
-      // Update supplier balance and active trips
-      setSuppliers(prev => prev.map(supplier =>
-          supplier.id === memo.supplierId
-            ? { ...supplier, balance: supplier.balance - memo.balance, activeTrips: supplier.activeTrips - 1 }
-            : supplier
-        ));
+      // Update supplier balance and active trips - subtract the full memo amount when paid
+      setSuppliers(prev => prev.map(supplier => {
+        if (supplier.id === memo.supplierId) {
+          const memoTotalAmount = (memo.freight || 0) + (memo.commission || 0) + (memo.detention || 0) + (memo.rtoAmount || 0) + (memo.extraCharge || 0) - (memo.mamul || 0);
+          const newBalance = supplier.balance - memoTotalAmount;
+          console.log(`📊 Supplier ${supplier.name}: Balance ${supplier.balance} - Memo Amount ${memoTotalAmount} = New Balance ${newBalance}`);
+          
+          return {
+            ...supplier, 
+            balance: newBalance,
+            activeTrips: Math.max(0, supplier.activeTrips - 1)
+          };
+        }
+        return supplier;
+      }));
       
       alert('Memo marked as paid successfully!');
     } catch (error) {

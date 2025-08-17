@@ -66,9 +66,9 @@ const Dashboard: React.FC = () => {
     return sum + (memo.commission || calculateCommission(memo.freight, 6));
   }, 0);
   
-  // Calculate actual balances from bills and memos
-  const totalPartyBalance = bills.reduce((sum, bill) => sum + bill.balance, 0);
-  const totalSupplierBalance = memos.reduce((sum, memo) => sum + memo.balance, 0);
+  // Calculate actual balances from party and supplier records (not just pending bills/memos)
+  const totalPartyBalance = parties.reduce((sum, party) => sum + (party.balance || 0), 0);
+  const totalSupplierBalance = suppliers.reduce((sum, supplier) => sum + (supplier.balance || 0), 0);
   
   // Monthly revenue calculation
   const getMonthlyRevenue = (month: string) => {

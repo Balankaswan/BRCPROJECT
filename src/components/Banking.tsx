@@ -86,8 +86,37 @@ const Banking: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Auto-link transaction to bill/memo if not already linked
+    let linkedBillNo = formData.relatedName;
+    let linkedId = formData.relatedId;
+    
+    if (!linkedId && formData.narration) {
+      // Try to auto-link based on narration content
+      const billMatch = bills.find(bill => 
+        formData.narration.toLowerCase().includes(bill.billNo.toLowerCase()) ||
+        formData.narration.toLowerCase().includes(bill.partyName.toLowerCase())
+      );
+      
+      if (billMatch) {
+        linkedId = billMatch.id;
+        linkedBillNo = billMatch.billNo;
+        console.log(`🔗 Auto-linked transaction to Bill: ${billMatch.billNo} (${billMatch.partyName})`);
+      } else {
+        const memoMatch = memos.find(memo => 
+          formData.narration.toLowerCase().includes(memo.memoNo.toLowerCase()) ||
+          formData.narration.toLowerCase().includes(memo.supplierName.toLowerCase())
+        );
+        
+        if (memoMatch) {
+          linkedId = memoMatch.id;
+          linkedBillNo = memoMatch.memoNo;
+          console.log(`🔗 Auto-linked transaction to Memo: ${memoMatch.memoNo} (${memoMatch.supplierName})`);
+        }
+      }
+    }
+    
     // Validate payment amount for Bill/Memo transactions
-    if ((formData.category === 'bill' || formData.category === 'memo') && formData.relatedId) {
+    if ((formData.category === 'bill' || formData.category === 'memo') && linkedId) {
       const amount = parseFloat(formData.amount);
       const warning = validatePaymentAmount(amount);
       if (warning) {
@@ -102,11 +131,11 @@ const Banking: React.FC = () => {
       date: formData.date,
       type: formData.type,
       amount: parseFloat(formData.amount),
-      particulars: formData.narration, // Fix: Add required particulars field
+      particulars: formData.narration,
       narration: formData.narration,
       category: formData.category,
-      relatedId: formData.relatedId || undefined,
-      relatedName: formData.relatedName || undefined,
+      relatedId: linkedId || undefined,
+      relatedName: linkedBillNo || undefined,
       senderName: formData.senderName || undefined,
       receiverName: formData.receiverName || undefined,
       createdAt: editingEntry?.createdAt || new Date().toISOString()
@@ -152,11 +181,29 @@ const Banking: React.FC = () => {
       return;
     }
 
-    // Update Bill/Memo payment status
-    if (formData.category === 'bill' && formData.relatedId) {
-      updateBillPayment(formData.relatedId, parseFloat(formData.amount));
-    } else if (formData.category === 'memo' && formData.relatedId) {
-      updateMemoPayment(formData.relatedId, parseFloat(formData.amount));
+    // Update Bill/Memo payment status with linked transaction
+    if (linkedId) {
+      const amount = parseFloat(formData.amount);
+      
+      // Find the linked bill or memo
+      const linkedBill = bills.find(b => b.id === linkedId) || receivedBills.find(b => b.id === linkedId);
+      const linkedMemo = memos.find(m => m.id === linkedId) || paidMemos.find(m => m.id === linkedId);
+      
+      if (linkedBill) {
+        console.log(`💰 Updating bill payment: ${linkedBill.billNo} with amount ${formatCurrency(amount)}`);
+        updateBillPayment(linkedId, amount);
+        
+        // Note: Party ledger entries are auto-generated from bills and bank entries
+        console.log(`✅ Party ledger will be auto-updated for bill ${linkedBill.billNo}`);
+      } else if (linkedMemo) {
+        console.log(`💰 Updating memo payment: ${linkedMemo.memoNo} with amount ${formatCurrency(amount)}`);
+        updateMemoPayment(linkedId, amount);
+        
+        // Note: Supplier ledger entries are auto-generated from memos and bank entries
+        console.log(`✅ Supplier ledger will be auto-updated for memo ${linkedMemo.memoNo}`);
+      } else {
+        console.warn(`⚠️ Could not find bill or memo with ID: ${linkedId}`);
+      }
     } else if (formData.category === 'advance' && formData.relatedId) {
       // Handle advance payments for both bills and memos
       if (formData.relatedName === 'bill') {
@@ -352,21 +399,25 @@ const Banking: React.FC = () => {
     });
   };
 
+  // Note: Ledger entries are now auto-generated from bills/memos and bank entries
+  // No need to create them manually via API calls
+
+
   const resetForm = () => {
     setFormData({
       date: new Date().toISOString().split('T')[0],
       type: 'credit',
       amount: '',
       narration: '',
-      category: 'other',
-      relatedName: '',
+      category: 'bill',
       relatedId: '',
+      relatedName: '',
       senderName: '',
       receiverName: ''
     });
     setEditingEntry(null);
     setShowForm(false);
-    setPaymentWarning(null);
+    setPaymentWarning('');
   };
 
   // ===== ROLLBACK FUNCTIONS FOR TRANSACTION DELETION =====

@@ -390,8 +390,8 @@ const Party: React.FC = () => {
 
                     {/* Trip Details */}
                     <div className="mt-3 space-y-1">
-                      {bill.trips.map((trip) => (
-                        <div key={trip.id} className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
+                      {bill.trips.map((trip, tripIndex) => (
+                        <div key={trip.id || `trip-${bill.id}-${tripIndex}`} className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
                           <span>{formatDate(trip.loadingDate)}: {trip.from} → {trip.to}</span>
                           <span className="ml-2">({trip.vehicle})</span>
                           <span className="ml-2 font-medium">{formatCurrency(trip.freight)}</span>

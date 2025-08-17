@@ -427,16 +427,21 @@ const handleAddAdvance = (billId: string) => {
       setBills(prev => prev.filter(b => b.id !== bill.id));
       setReceivedBills(prev => [...prev, receivedBill]);
 
-      // Update party balance and active trips
-      setParties(prev => prev.map(party => 
-        party.id === bill.partyId 
-          ? { 
-              ...party, 
-              balance: Math.max(0, party.balance - bill.balance), 
-              activeTrips: Math.max(0, party.activeTrips - bill.trips.length) 
-            }
-          : party
-      ));
+      // Update party balance and active trips - subtract the full bill amount when received
+      setParties(prev => prev.map(party => {
+        if (party.id === bill.partyId) {
+          const billTotalAmount = bill.totalFreight + bill.detention + (bill.rtoAmount || 0) + (bill.extraCharges || 0) - bill.mamul;
+          const newBalance = party.balance - billTotalAmount;
+          console.log(`📊 Party ${party.name}: Balance ${party.balance} - Bill Amount ${billTotalAmount} = New Balance ${newBalance}`);
+          
+          return {
+            ...party, 
+            balance: newBalance,
+            activeTrips: Math.max(0, party.activeTrips - bill.trips.length) 
+          };
+        }
+        return party;
+      }));
       
       alert('Bill marked as received successfully!');
     } catch (error) {

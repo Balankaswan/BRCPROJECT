@@ -200,9 +200,9 @@ const DragDropInput: React.FC<DragDropInputProps> = ({
       {/* Auto-complete suggestions dropdown */}
       {showSuggestions && (suggestions.length > 0 || isNewItem) && (
         <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
-          {suggestions.map((suggestion) => (
+          {suggestions.map((suggestion, index) => (
             <button
-              key={suggestion.id}
+              key={suggestion.id || `${type}-suggestion-${index}-${suggestion.name}`}
               type="button"
               onClick={() => handleSuggestionClick(suggestion)}
               className="w-full px-4 py-2 text-left hover:bg-blue-50 focus:bg-blue-50 focus:outline-none flex items-center justify-between"

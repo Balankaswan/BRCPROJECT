@@ -17,8 +17,7 @@ import {
   generatePartyLedgerPDF,
   generateSupplierLedgerPDF
 } from '../utils/ledgerUtils';
-import { generateAllPartyLedgers } from '../utils/autoLedgerManager';
-import { generateAllSupplierLedgers } from '../utils/autoSupplierLedgerManager';
+import { generateAllPartyLedgers, generateAllSupplierLedgers } from '../utils/autoLedgerManager';
 import jsPDF from 'jspdf';
 
 const Ledgers: React.FC = () => {
@@ -42,7 +41,14 @@ const Ledgers: React.FC = () => {
   
   // Generate party ledgers automatically from existing data
   const partyLedgers = useMemo(() => {
-    return generateAllPartyLedgers(parties, bills, bankEntries);
+    console.log('🔄 Generating party ledgers:', { 
+      partiesCount: parties.length, 
+      billsCount: bills.length,
+      billsWithPartyId: bills.filter(b => b.partyId).length 
+    });
+    const ledgers = generateAllPartyLedgers(parties, bills, bankEntries);
+    console.log('✅ Generated party ledgers:', ledgers.length);
+    return ledgers;
   }, [parties, bills, bankEntries]);
 
   // Generate supplier ledgers automatically from existing data
@@ -472,11 +478,9 @@ const Ledgers: React.FC = () => {
                   <tr>
                     <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bill No</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trip Details</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bill Amount (₹)</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Received (₹)</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Deductions (₹)</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Net Received (₹)</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Particulars</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Credit (₹)</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Debit (₹)</th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Balance (₹)</th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                   </tr>
@@ -484,8 +488,8 @@ const Ledgers: React.FC = () => {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {selectedPartyLedger.entries
                     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-                    .map((entry) => (
-                    <tr key={entry.id}>
+                    .map((entry, entryIndex) => (
+                    <tr key={entry.id && entry.id !== 'auto_undefined' ? entry.id : `entry-${selectedPartyLedger.partyId}-${entryIndex}-${entry.date}-${entry.type || 'unknown'}`}>
                       <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
                         {formatDate(entry.date)}
                       </td>
@@ -493,19 +497,13 @@ const Ledgers: React.FC = () => {
                         {entry.billNo || '-'}
                       </td>
                       <td className="px-3 py-2 text-xs text-gray-900 max-w-xs">
-                        {entry.tripDetails || entry.particulars || '-'}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900 font-medium">
-                        {formatCurrency(entry.billAmount || entry.creditAmount || 0)}
+                        {entry.particulars || '-'}
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap text-xs text-green-600 font-medium">
-                        {formatCurrency(entry.paymentAmount || entry.debitAmount || 0)}
+                        {entry.creditAmount > 0 ? formatCurrency(entry.creditAmount) : '-'}
                       </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-xs text-red-600">
-                        {formatCurrency(entry.deductionAmount || 0)}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-xs text-blue-600 font-medium">
-                        {formatCurrency((entry.paymentAmount || entry.debitAmount || 0) - (entry.deductionAmount || 0))}
+                      <td className="px-3 py-2 whitespace-nowrap text-xs text-red-600 font-medium">
+                        {entry.debitAmount > 0 ? formatCurrency(entry.debitAmount) : '-'}
                       </td>
                       <td className={`px-3 py-2 whitespace-nowrap text-xs font-bold ${
                         entry.runningBalance >= 0 ? 'text-green-600' : 'text-red-600'
@@ -525,6 +523,24 @@ const Ledgers: React.FC = () => {
                     </tr>
                   ))}
                 </tbody>
+                {/* Totals Row */}
+                <tfoot className="bg-gray-100">
+                  <tr>
+                    <td colSpan={3} className="px-3 py-2 text-xs font-bold text-gray-900">TOTALS:</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-xs font-bold text-green-600">
+                      {formatCurrency(selectedPartyLedger.totalBillAmount)}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-xs font-bold text-red-600">
+                      {formatCurrency(selectedPartyLedger.totalPaid + selectedPartyLedger.totalDeductions)}
+                    </td>
+                    <td className={`px-3 py-2 whitespace-nowrap text-xs font-bold ${
+                      selectedPartyLedger.outstandingBalance >= 0 ? 'text-green-600' : 'text-red-600'
+                    }`}>
+                      {formatCurrency(selectedPartyLedger.outstandingBalance)}
+                    </td>
+                    <td></td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </div>
@@ -597,8 +613,8 @@ const Ledgers: React.FC = () => {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {selectedSupplierLedger.entries
                     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-                    .map((entry) => (
-                    <tr key={entry.id}>
+                    .map((entry, entryIndex) => (
+                    <tr key={entry.id && entry.id !== 'auto_undefined' ? entry.id : `supplier-entry-${selectedSupplierLedger.supplierId}-${entryIndex}-${entry.date}-${entryIndex}`}>
                       <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-900">
                         {formatDate(entry.date)}
                       </td>
@@ -753,7 +769,7 @@ const Ledgers: React.FC = () => {
           </div>
           <ul className="divide-y divide-gray-200">
             {filteredPartyLedgers.map((ledger, index) => (
-              <li key={ledger.id || `party-ledger-${index}`}>
+              <li key={`party-ledger-${ledger.partyId}-${index}`}>
                 <div className="px-4 py-4 hover:bg-gray-50">
                   <div className="grid grid-cols-5 gap-4 items-center">
                     <div>
@@ -819,7 +835,7 @@ const Ledgers: React.FC = () => {
           </div>
           <ul className="divide-y divide-gray-200">
             {filteredSupplierLedgers.map((ledger, index) => (
-              <li key={ledger.id || `supplier-ledger-${index}`}>
+              <li key={`supplier-ledger-${ledger.supplierId}-${index}`}>
                 <div className="px-4 py-4 hover:bg-gray-50">
                   <div className="grid grid-cols-5 gap-4 items-center">
                     <div>
