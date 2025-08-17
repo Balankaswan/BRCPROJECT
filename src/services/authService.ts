@@ -13,8 +13,6 @@ export interface AuthState {
 }
 
 class AuthService {
-  private baseUrl = 'https://api.jsonbin.io/v3'; // Free cloud storage service
-  private apiKey = 'your-api-key'; // User will need to get this
 
   // Simple login with username/password
   async login(username: string, password: string): Promise<AuthState> {
@@ -97,7 +95,7 @@ class AuthService {
   }
 
   // Private methods for cloud storage
-  private async getUserData(userHash: string): Promise<User | null> {
+  private async getUserData(_userHash: string): Promise<User | null> {
     try {
       // This would connect to your cloud storage
       // For now, return null (user doesn't exist)
@@ -107,7 +105,7 @@ class AuthService {
     }
   }
 
-  private async saveUserData(userHash: string, userData: User): Promise<void> {
+  private async saveUserData(_userHash: string, userData: User): Promise<void> {
     try {
       // This would save to your cloud storage
       console.log('Saving user data to cloud:', userData);

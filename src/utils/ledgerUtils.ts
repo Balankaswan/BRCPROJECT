@@ -13,31 +13,28 @@ import { formatDate, formatCurrency } from './calculations';
 
 // Party Ledger Functions
 export const createPartyLedgerEntry = (
-  bill: Bill,
-  bankEntry?: BankEntry,
-  isAdvance: boolean = false
+  bill: Bill
 ): PartyLedgerEntry => {
-  const tripDetails = bill.trips
-    .map(trip => `${trip.from} - ${trip.to}`)
-    .join(', ');
-
-  // Calculate RTO challan amount from trips
-  const rtoAmount = bill.trips.reduce((sum, trip) => {
-    return sum + (parseFloat(trip.rtoChallan) || 0);
-  }, 0);
+  const tripDetails = bill.trips.map(trip => `${trip.from} - ${trip.to}`).join(', ');
+  const rtoAmountFromTrips = bill.trips.reduce((sum, trip) => sum + (parseFloat(trip.rtoChallan) || 0), 0);
+  const billCredit = bill.totalFreight + (bill.detention || 0) + (bill.rtoAmount || 0) + rtoAmountFromTrips;
 
   return {
-    id: `${bill.id}_${bankEntry?.id || 'bill'}`,
-    date: bankEntry?.date || bill.billDate,
+    id: `${bill.id}_bill`,
+    type: 'bill_credit',
+    entryType: 'credit',
+    date: bill.billDate,
     billNo: bill.billNo,
+    billDate: bill.billDate,
+    particulars: `Bill created (${tripDetails})` + (rtoAmountFromTrips ? ` • RTO: ${formatCurrency(rtoAmountFromTrips)}` : ''),
+    creditAmount: billCredit,
+    debitAmount: 0,
+    runningBalance: 0,
+    billAmount: billCredit,
     tripDetails,
-    creditAmount: isAdvance ? 0 : bill.totalFreight + bill.detention + (bill.rtoAmount || 0) + rtoAmount,
-    debitPayment: (bankEntry && !isAdvance) ? bankEntry.amount : 0,
-    debitAdvance: isAdvance ? (bankEntry?.amount || bill.advances.reduce((sum, adv) => sum + adv.amount, 0)) : 0,
-    runningBalance: 0, // Will be calculated after sorting entries
-    remarks: bankEntry?.narration || (isAdvance ? 'Advance received' : `Bill created with RTO: ${formatCurrency(rtoAmount)}`),
+    remarks: bill.receivedNarration || '',
     relatedBillId: bill.id,
-    relatedBankEntryId: bankEntry?.id
+    createdAt: new Date().toISOString()
   };
 };
 
@@ -57,8 +54,15 @@ export const updatePartyLedger = (
       partyName: party.name,
       entries: [],
       outstandingBalance: 0,
-      createdAt: new Date().toISOString()
-    };
+      totalBillAmount: 0,
+      totalPaid: 0,
+      totalDeductions: 0,
+      paidBills: 0,
+      pendingBills: 0,
+      partiallyPaidBills: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    } as PartyLedger;
   }
 
   // Get all bills for this party
@@ -82,15 +86,20 @@ export const updatePartyLedger = (
     bill.advances.forEach(advance => {
       entries.push({
         id: `${bill.id}_advance_${advance.id}`,
+        type: 'advance_debit',
+        entryType: 'debit',
         date: advance.date,
         billNo: bill.billNo,
-        tripDetails: bill.trips.map(trip => `${trip.from} - ${trip.to}`).join(', '),
+        billDate: bill.billDate,
+        particulars: advance.narration || 'Advance received during bill creation',
         creditAmount: 0,
-        debitPayment: 0,
-        debitAdvance: advance.amount,
+        debitAmount: advance.amount,
         runningBalance: 0,
+        tripDetails: bill.trips.map(trip => `${trip.from} - ${trip.to}`).join(', '),
+        advanceAmount: advance.amount,
         remarks: advance.narration || 'Advance received during bill creation',
-        relatedBillId: bill.id
+        relatedBillId: bill.id,
+        createdAt: new Date().toISOString()
       });
     });
 
@@ -99,16 +108,22 @@ export const updatePartyLedger = (
     billPayments.forEach(payment => {
       entries.push({
         id: `${bill.id}_payment_${payment.id}`,
+        type: 'payment_debit',
+        entryType: 'debit',
         date: payment.date,
         billNo: bill.billNo,
-        tripDetails: bill.trips.map(trip => `${trip.from} - ${trip.to}`).join(', '),
+        billDate: bill.billDate,
+        particulars: payment.narration || 'Payment received',
         creditAmount: 0,
-        debitPayment: payment.amount,
-        debitAdvance: 0,
+        debitAmount: payment.amount,
         runningBalance: 0,
+        tripDetails: bill.trips.map(trip => `${trip.from} - ${trip.to}`).join(', '),
+        paymentAmount: payment.amount,
+        paymentMode: 'other',
         remarks: payment.narration || 'Payment received',
         relatedBillId: bill.id,
-        relatedBankEntryId: payment.id
+        relatedPaymentId: payment.id,
+        createdAt: new Date().toISOString()
       });
     });
   });
@@ -119,13 +134,35 @@ export const updatePartyLedger = (
   // Calculate running balances
   let runningBalance = 0;
   entries.forEach(entry => {
-    runningBalance += entry.creditAmount - (entry.type === 'payment_debit' ? entry.debitAmount : 0) - (entry.type === 'advance_debit' ? entry.debitAmount : 0);
+    if (entry.entryType === 'credit') {
+      runningBalance += entry.creditAmount || 0;
+    } else {
+      runningBalance -= entry.debitAmount || 0;
+    }
     entry.runningBalance = runningBalance;
   });
 
   // Update ledger
+  // Compute ledger aggregates
+  const totalBillAmount = entries
+    .filter(e => e.type === 'bill_credit')
+    .reduce((sum, e) => sum + (e.billAmount || e.creditAmount || 0), 0);
+  const totalPaid = entries
+    .filter(e => e.type === 'payment_debit')
+    .reduce((sum, e) => sum + (e.debitAmount || 0), 0);
+  const totalDeductions = entries
+    .filter(e => e.type === 'deduction_debit')
+    .reduce((sum, e) => sum + (e.deductionAmount || 0), 0);
+
   ledger.entries = entries;
   ledger.outstandingBalance = runningBalance;
+  ledger.totalBillAmount = totalBillAmount;
+  ledger.totalPaid = totalPaid;
+  ledger.totalDeductions = totalDeductions;
+  ledger.paidBills = bills.filter(b => b.status === 'fully_paid' || b.status === 'received').length;
+  ledger.pendingBills = bills.filter(b => b.status === 'pending').length;
+  ledger.partiallyPaidBills = bills.filter(b => b.status === 'settled_with_deductions').length;
+  ledger.updatedAt = new Date().toISOString();
 
   // Return updated ledgers array
   return [
@@ -432,9 +469,9 @@ export const generatePartyLedgerPDF = async (ledger: PartyLedger) => {
   pdf.setFont('helvetica', 'bold');
   pdf.setFillColor(230, 230, 230); // Light gray background for totals
   
-  const totalCredit = ledger.entries.reduce((sum, entry) => sum + entry.creditAmount, 0);
-  const totalDebitPayment = ledger.entries.reduce((sum, entry) => sum + (entry.type === 'payment_debit' ? entry.debitAmount : (entry as any).debitPayment || 0), 0);
-  const totalDebitAdvance = ledger.entries.reduce((sum, entry) => sum + (entry.type === 'advance_debit' ? entry.debitAmount : (entry as any).debitAdvance || 0), 0);
+  const totalCredit = ledger.entries.reduce((sum, entry) => sum + (entry.creditAmount || 0), 0);
+  const totalDebitPayment = ledger.entries.reduce((sum, entry) => sum + (entry.type === 'payment_debit' ? (entry.debitAmount || 0) : 0), 0);
+  const totalDebitAdvance = ledger.entries.reduce((sum, entry) => sum + (entry.type === 'advance_debit' ? (entry.debitAmount || 0) : 0), 0);
   
   const totalRowData = [
     'TOTALS',
@@ -582,11 +619,11 @@ export const generateSupplierLedgerPDF = async (ledger: SupplierLedger) => {
   pdf.setFont('helvetica', 'bold');
   pdf.setFillColor(230, 230, 230); // Light gray background for totals
   
-  const totalDetention = ledger.entries.reduce((sum, entry) => sum + entry.detentionCharges, 0);
-  const totalExtraWeight = ledger.entries.reduce((sum, entry) => sum + entry.extraWeightCharges, 0);
-  const totalCredit = ledger.entries.reduce((sum, entry) => sum + entry.creditAmount, 0);
-  const totalDebitPayment = ledger.entries.reduce((sum, entry) => sum + (entry.type === 'payment_debit' ? entry.debitAmount : (entry as any).debitPayment || 0), 0);
-  const totalDebitAdvance = ledger.entries.reduce((sum, entry) => sum + (entry.type === 'advance_debit' ? entry.debitAmount : (entry as any).debitAdvance || 0), 0);
+  const totalDetention = ledger.entries.reduce((sum, entry) => sum + (entry.detentionCharges || 0), 0);
+  const totalExtraWeight = ledger.entries.reduce((sum, entry) => sum + (entry.extraWeightCharges || 0), 0);
+  const totalCredit = ledger.entries.reduce((sum, entry) => sum + (entry.creditAmount || 0), 0);
+  const totalDebitPayment = ledger.entries.reduce((sum, entry) => sum + (entry.debitPayment || 0), 0);
+  const totalDebitAdvance = ledger.entries.reduce((sum, entry) => sum + (entry.debitAdvance || 0), 0);
   
   const totalRowData = [
     'TOTALS',

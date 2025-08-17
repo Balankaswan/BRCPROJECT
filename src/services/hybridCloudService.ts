@@ -1,9 +1,7 @@
-// Hybrid Cloud Service - Switches between Demo Mode and Firebase
-import { isDemoMode, isFirebaseConfigured } from '../config/firebase';
+// Hybrid Cloud Service - Backend-only (Render + MongoDB) with optional demo fallback
 import { authService as demoAuthService, AuthState as DemoAuthState } from './authService';
 import { cloudDataService as demoCloudService } from './cloudDataService';
-import { firebaseAuthService, FirebaseAuthState } from './firebaseAuthService';
-import { firebaseDataService } from './firebaseDataService';
+import { apiService } from './apiService';
 
 // Unified auth state interface
 export interface UnifiedAuthState {
@@ -16,106 +14,107 @@ export interface UnifiedAuthState {
     username?: string; // For demo mode compatibility
   } | null;
   token: string | null;
-  mode: 'demo' | 'firebase';
+  mode: 'demo' | 'backend';
 }
 
 class HybridCloudService {
-  private currentMode: 'demo' | 'firebase' = 'demo';
+  private currentMode: 'demo' | 'backend' = 'backend';
 
   constructor() {
-    // Force Firebase mode since we have real Firebase credentials
-    this.currentMode = 'firebase';
-    console.log(`🚀 Cloud service FORCED to Firebase mode for production sync`);
-    console.log(`📊 Firebase configured: ${isFirebaseConfigured()}`);
-    console.log(`🔑 Demo mode disabled: ${!isDemoMode()}`);
+    // Default to backend mode (Render + MongoDB). Demo remains for fallback only.
+    this.currentMode = 'backend';
+    console.log(`🚀 Cloud service set to Backend mode (Render + MongoDB)`);
   }
 
   // Authentication methods
   async login(emailOrUsername: string, password: string): Promise<UnifiedAuthState> {
-    if (this.currentMode === 'firebase') {
-      const firebaseAuth = await firebaseAuthService.login(emailOrUsername, password);
-      return this.convertFirebaseAuth(firebaseAuth);
-    } else {
-      const demoAuth = await demoAuthService.login(emailOrUsername, password);
-      return this.convertDemoAuth(demoAuth);
-    }
+    // Using demoAuthService for simple local auth (no Firebase). Replace with backend auth if available.
+    const demoAuth = await demoAuthService.login(emailOrUsername, password);
+    return this.convertDemoAuth(demoAuth);
   }
 
   async register(emailOrUsername: string, password: string, companyName: string): Promise<UnifiedAuthState> {
-    if (this.currentMode === 'firebase') {
-      const firebaseAuth = await firebaseAuthService.register(emailOrUsername, password, companyName);
-      return this.convertFirebaseAuth(firebaseAuth);
-    } else {
-      const demoAuth = await demoAuthService.register(emailOrUsername, password, companyName);
-      return this.convertDemoAuth(demoAuth);
-    }
+    const demoAuth = await demoAuthService.register(emailOrUsername, password, companyName);
+    return this.convertDemoAuth(demoAuth);
   }
 
   async logout(): Promise<void> {
-    if (this.currentMode === 'firebase') {
-      await firebaseAuthService.logout();
-      await firebaseDataService.stopSync();
-    } else {
-      await demoAuthService.logout();
-      demoCloudService.stopSync();
-    }
+    await demoAuthService.logout();
+    demoCloudService.stopSync();
   }
 
   getCurrentAuth(): UnifiedAuthState {
-    if (this.currentMode === 'firebase') {
-      const firebaseAuth = firebaseAuthService.getCurrentAuth();
-      return this.convertFirebaseAuth(firebaseAuth);
-    } else {
-      const demoAuth = demoAuthService.getCurrentAuth();
-      return this.convertDemoAuth(demoAuth);
-    }
+    const demoAuth = demoAuthService.getCurrentAuth();
+    return this.convertDemoAuth(demoAuth);
   }
 
   // Data sync methods
   async initializeSync(): Promise<void> {
-    if (this.currentMode === 'firebase') {
-      await firebaseDataService.initializeSync();
+    if (this.currentMode === 'backend') {
+      // Prime localStorage from backend on app start
+      await this.syncFromCloud();
     } else {
       await demoCloudService.initializeSync();
     }
   }
 
   async syncToCloud(): Promise<void> {
-    if (this.currentMode === 'firebase') {
-      await firebaseDataService.syncToCloud();
+    if (this.currentMode === 'backend') {
+      // Push local entities to backend using helper mapping
+      const keys = ['loadingSlips','memos','bills','parties','suppliers','bankEntries'];
+      for (const key of keys) {
+        const data = JSON.parse(localStorage.getItem(key) || '[]');
+        await apiService.syncToBackend(key, data);
+      }
+      localStorage.setItem('lastSyncTime', new Date().toISOString());
     } else {
       await demoCloudService.syncToCloud();
     }
   }
 
   async syncFromCloud(): Promise<void> {
-    if (this.currentMode === 'firebase') {
-      await firebaseDataService.syncFromCloud();
+    if (this.currentMode === 'backend') {
+      // Fetch from backend and hydrate localStorage in frontend-friendly shapes
+      const [ls, memos, bills, parties, suppliers, bank] = await Promise.all([
+        apiService.getLoadingSlips(),
+        apiService.getMemos(),
+        apiService.getBills(),
+        apiService.getParties(),
+        apiService.getSuppliers(),
+        apiService.getBankEntries()
+      ]);
+      localStorage.setItem('loadingSlips', JSON.stringify(ls));
+      localStorage.setItem('memos', JSON.stringify(memos));
+      localStorage.setItem('bills', JSON.stringify(bills));
+      localStorage.setItem('parties', JSON.stringify(parties));
+      localStorage.setItem('suppliers', JSON.stringify(suppliers));
+      localStorage.setItem('bankEntries', JSON.stringify(bank));
+      localStorage.setItem('lastSyncTime', new Date().toISOString());
     } else {
       await demoCloudService.syncFromCloud();
     }
   }
 
   async forceSync(): Promise<void> {
-    if (this.currentMode === 'firebase') {
-      await firebaseDataService.forceSync();
+    if (this.currentMode === 'backend') {
+      await this.syncToCloud();
+      await this.syncFromCloud();
     } else {
       await demoCloudService.forcSync();
     }
   }
 
   stopSync(): void {
-    if (this.currentMode === 'firebase') {
-      firebaseDataService.stopSync();
-    } else {
-      demoCloudService.stopSync();
-    }
+    // No background pollers in backend mode; only demo service has interval
+    demoCloudService.stopSync();
   }
 
   // File upload methods
-  async uploadPODFile(file: File, billId: string): Promise<string> {
-    if (this.currentMode === 'firebase') {
-      return await firebaseDataService.uploadPODFile(file, billId);
+  async uploadPODFile(file: File, _billId: string): Promise<string> {
+    if (this.currentMode === 'backend') {
+      const result = await apiService.uploadFile(file);
+      // Expecting backend to return a URL
+      return result.url || result.path || '';
     } else {
       // Demo mode - convert to base64
       return new Promise((resolve) => {
@@ -126,63 +125,38 @@ class HybridCloudService {
     }
   }
 
-  async deletePODFile(fileUrl: string): Promise<void> {
-    if (this.currentMode === 'firebase') {
-      await firebaseDataService.deletePODFile(fileUrl);
-    }
-    // Demo mode - no action needed for base64 files
+  async deletePODFile(_fileUrl: string): Promise<void> {
+    // Backend endpoint for deletion not defined; no-op for now.
+    return;
   }
 
   // Utility methods
   getSyncStatus(): { isOnline: boolean; lastSync: string | null; mode: string } {
-    if (this.currentMode === 'firebase') {
-      const status = firebaseDataService.getSyncStatus();
-      return { ...status, mode: 'firebase' };
-    } else {
-      return {
-        isOnline: true,
-        lastSync: localStorage.getItem('lastSyncTime'),
-        mode: 'demo'
-      };
-    }
+    return {
+      isOnline: true,
+      lastSync: localStorage.getItem('lastSyncTime'),
+      mode: this.currentMode
+    };
   }
 
-  getCurrentMode(): 'demo' | 'firebase' {
+  getCurrentMode(): 'demo' | 'backend' {
     return this.currentMode;
   }
 
   isFirebaseMode(): boolean {
-    return this.currentMode === 'firebase';
+    return false;
   }
 
   isDemoMode(): boolean {
     return this.currentMode === 'demo';
   }
 
-  // Backup methods (Firebase only)
+  // Backup methods (no-op without Firebase). Implement via backend if needed.
   async createBackup(): Promise<void> {
-    if (this.currentMode === 'firebase') {
-      await firebaseDataService.createBackup();
-    } else {
-      throw new Error('Backup feature only available in Firebase mode');
-    }
+    console.warn('Backup not implemented for backend mode');
   }
 
   // Private helper methods
-  private convertFirebaseAuth(firebaseAuth: FirebaseAuthState): UnifiedAuthState {
-    return {
-      isAuthenticated: firebaseAuth.isAuthenticated,
-      user: firebaseAuth.user ? {
-        uid: firebaseAuth.user.uid,
-        email: firebaseAuth.user.email,
-        displayName: firebaseAuth.user.displayName,
-        companyName: firebaseAuth.user.companyName
-      } : null,
-      token: firebaseAuth.token,
-      mode: 'firebase'
-    };
-  }
-
   private convertDemoAuth(demoAuth: DemoAuthState): UnifiedAuthState {
     return {
       isAuthenticated: demoAuth.isAuthenticated,
@@ -192,7 +166,7 @@ class HybridCloudService {
         companyName: demoAuth.user.companyName
       } : null,
       token: demoAuth.token,
-      mode: 'demo'
+      mode: this.currentMode
     };
   }
 }

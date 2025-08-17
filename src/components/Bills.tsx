@@ -297,18 +297,28 @@ const Bills: React.FC = () => {
   };
 
   const handleDelete = (id: string) => {
-    if (confirm('Are you sure you want to delete this bill?')) {
-      const bill = bills.find(b => b.id === id);
-      if (bill) {
-        setBills(prev => prev.filter(b => b.id !== id));
-        // Update party balance
-        setParties(prev => prev.map(party => 
-          party.id === bill.partyId 
-            ? { ...party, balance: party.balance - bill.balance, activeTrips: party.activeTrips - bill.trips.length }
-            : party
-        ));
+    if (!confirm('Are you sure you want to delete this bill?')) return;
+
+    const bill = bills.find(b => b.id === id);
+    if (!bill) return;
+
+    (async () => {
+      try {
+        // Delete from backend first
+        await apiService.deleteBill(id);
+        console.log('✅ Bill deleted from backend');
+      } catch (error) {
+        console.warn('⚠️ Failed to delete bill from backend:', error);
       }
-    }
+
+      // Optimistic local updates
+      setBills(prev => prev.filter(b => b.id !== id));
+      setParties(prev => prev.map(party => 
+        party.id === bill.partyId 
+          ? { ...party, balance: party.balance - bill.balance, activeTrips: party.activeTrips - bill.trips.length }
+          : party
+      ));
+    })();
   };
 
 const handleAddAdvance = (billId: string) => {
@@ -353,19 +363,34 @@ const handleAddAdvance = (billId: string) => {
   const handleMarkAsReceived = (bill: Bill) => {
     const receivedDate = prompt('Enter received date (YYYY-MM-DD):');
     const narration = prompt('Enter narration:') || '';
-    
-    if (receivedDate) {
-      const receivedBill = { ...bill, status: 'received' as const, receivedDate, receivedNarration: narration };
-      setReceivedBills(prev => [...prev, receivedBill]);
-      setBills(prev => prev.filter(b => b.id !== bill.id));
-      
-      // Update party balance
-      setParties(prev => prev.map(party => 
-        party.id === bill.partyId 
-          ? { ...party, balance: party.balance - bill.balance, activeTrips: party.activeTrips - bill.trips.length }
-          : party
-      ));
-    }
+    if (!receivedDate) return;
+
+    (async () => {
+      try {
+        // Persist to backend; socket will refresh list
+        await apiService.updateBill(bill.id, {
+          status: 'received',
+          receivedDate,
+          receivedNarration: narration,
+          updatedAt: new Date().toISOString(),
+        });
+
+        // Optimistic local updates
+        const receivedBill = { ...bill, status: 'received' as const, receivedDate, receivedNarration: narration };
+        setReceivedBills(prev => [...prev, receivedBill]);
+        setBills(prev => prev.filter(b => b.id !== bill.id));
+
+        // Update party balance
+        setParties(prev => prev.map(party => 
+          party.id === bill.partyId 
+            ? { ...party, balance: party.balance - bill.balance, activeTrips: party.activeTrips - bill.trips.length }
+            : party
+        ));
+      } catch (error) {
+        console.error('Failed to mark bill as received:', error);
+        alert('Failed to mark bill as received. Please try again.');
+      }
+    })();
   };
 
   const handlePartySelect = (partyId: string) => {

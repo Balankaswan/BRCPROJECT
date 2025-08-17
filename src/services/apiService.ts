@@ -2,23 +2,24 @@ import io from 'socket.io-client';
 import { useState, useEffect } from 'react';
 
 // Configuration - Environment-based URLs
-const isLocalhost = window.location.hostname === 'localhost' || 
-                   window.location.hostname === '127.0.0.1' ||
-                   window.location.hostname.startsWith('192.168.') ||
-                   window.location.port === '5173';
+// Only use local API if explicitly enabled or running on the standard Vite port (5173).
+// This prevents dev preview proxies (e.g., 127.0.0.1:53059) from accidentally targeting localhost backend.
+const useLocalApi = typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_USE_LOCAL_API === 'true';
+const isViteDefaultPort = window.location.port === '5173';
+const isLocalApi = useLocalApi || isViteDefaultPort;
 
-const API_BASE_URL = isLocalhost 
+const API_BASE_URL = isLocalApi
   ? 'http://localhost:3001/api'
   : 'https://brcproject.onrender.com/api';
 
-const SOCKET_URL = isLocalhost 
+const SOCKET_URL = isLocalApi
   ? 'http://localhost:3001'
   : 'https://brcproject.onrender.com';
 
 console.log('🔍 Debug Info:');
 console.log('   - window.location.hostname:', window.location.hostname);
-console.log('   - isLocalhost:', isLocalhost);
-console.log('🌐 Environment:', isLocalhost ? 'LOCAL' : 'PRODUCTION');
+console.log('   - isLocalApi:', isLocalApi);
+console.log('🌐 Environment:', isLocalApi ? 'LOCAL' : 'PRODUCTION');
 console.log('🌐 API Base URL:', API_BASE_URL);
 console.log('🔌 Socket URL:', SOCKET_URL);
 
@@ -29,7 +30,7 @@ export const initializeSocket = () => {
   if (!socket) {
     console.log('🔌 Initializing Socket.io connection...');
     
-    const socketConfig = isLocalhost ? {
+    const socketConfig = isLocalApi ? {
       transports: ['websocket', 'polling'],
       timeout: 10000
     } : {
@@ -43,9 +44,9 @@ export const initializeSocket = () => {
     socket = io(SOCKET_URL, socketConfig);
     
     socket.on('connect', () => {
-      console.log('✅ Connected to server via Socket.io');
+      console.log('✅ Connected to server');
       console.log('🔗 Transport:', socket.io.engine.transport.name);
-      console.log('🌍 Environment:', isLocalhost ? 'LOCAL' : 'PRODUCTION');
+      console.log('🌍 Environment:', isLocalApi ? 'LOCAL' : 'PRODUCTION');
     });
     
     socket.on('disconnect', (reason: string) => {
@@ -54,7 +55,7 @@ export const initializeSocket = () => {
 
     socket.on('connect_error', (error: Error) => {
       console.error('❌ Socket connection error:', error.message);
-      if (!isLocalhost) {
+      if (!isLocalApi) {
         console.log('🔄 Falling back to polling transport...');
       }
     });
@@ -178,7 +179,18 @@ class ApiService {
 
   // Parties
   async getParties() {
-    return this.getAll('parties');
+    const backendData = await this.getAll('parties');
+    // Map backend to frontend shape with safe defaults
+    return backendData.map((item: any) => ({
+      id: item._id || item.id,
+      name: item.name,
+      mobile: item.mobile || '',
+      address: item.address || '',
+      gst: item.gst || '',
+      balance: item.balance ?? 0,
+      activeTrips: item.activeTrips ?? 0,
+      createdAt: item.createdAt
+    }));
   }
 
   async createParty(data: any) {
@@ -282,7 +294,17 @@ class ApiService {
 
   // Suppliers
   async getSuppliers() {
-    return this.getAll('suppliers');
+    const backendData = await this.getAll('suppliers');
+    // Map backend to frontend shape with safe defaults
+    return backendData.map((item: any) => ({
+      id: item._id || item.id,
+      name: item.name,
+      mobile: item.mobile || '',
+      address: item.address || '',
+      balance: item.balance ?? 0,
+      activeTrips: item.activeTrips ?? 0,
+      createdAt: item.createdAt
+    }));
   }
 
   async createSupplier(data: any) {

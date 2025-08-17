@@ -38,7 +38,7 @@ const Memo: React.FC = () => {
     };
   }, [setMemos]);
   const [suppliers, setSuppliers] = useLocalStorage<Supplier[]>(STORAGE_KEYS.SUPPLIERS, []);
-  const [paidMemos, setPaidMemos] = useLocalStorage<MemoType[]>(STORAGE_KEYS.PAID_MEMOS, []);
+  const [, setPaidMemos] = useLocalStorage<MemoType[]>(STORAGE_KEYS.PAID_MEMOS, []);
   const { getNextNumber, getNextNumberPreview, updateCounterIfHigher } = useCounters();
   const [showForm, setShowForm] = useState(false);
   const [editingMemo, setEditingMemo] = useState<MemoType | null>(null);
@@ -127,6 +127,7 @@ const Memo: React.FC = () => {
       loadingDate: formData.loadingDate,
       from_location: formData.from,
       to_location: formData.to,
+      supplierId: formData.supplierId,
       supplierName: formData.supplierName,
       partyName: formData.partyName,
       vehicleNumber: formData.vehicle,
@@ -135,14 +136,15 @@ const Memo: React.FC = () => {
       freight,
       mamul,
       detention,
-      extraCharge: rtoAmount + extraCharge,
+      rtoAmount,
+      extraCharge,
       commissionPercentage,
       commission,
       balance: calculateMemoBalance(freight, editingMemo?.advances || [], commission, mamul, detention, rtoAmount, extraCharge),
       status: 'pending',
       paidDate: null,
       paidAmount: 0,
-      advances: JSON.stringify(editingMemo?.advances || []),
+      advances: editingMemo?.advances || [],
       notes: formData.notes,
       createdAt: editingMemo?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -153,11 +155,11 @@ const Memo: React.FC = () => {
       
       if (editingMemo) {
         // Update existing memo via backend API
-        await apiService.update('memos', editingMemo.id, memo);
+        await apiService.updateMemo(editingMemo.id, memo);
         console.log('✅ Memo updated successfully via backend API');
       } else {
         // Create new memo via backend API
-        await apiService.create('memos', memo);
+        await apiService.createMemo(memo);
         console.log('✅ Memo created successfully via backend API');
       }
       
@@ -299,19 +301,44 @@ const Memo: React.FC = () => {
   };
 
   const handleMarkAsPaid = (memo: MemoType) => {
-    const paidDate = prompt('Enter paid date (YYYY-MM-DD):');
-    if (paidDate) {
-      const paidMemo = { ...memo, status: 'paid' as const, paidDate };
-      setPaidMemos(prev => [...prev, paidMemo]);
-      setMemos(prev => prev.filter(m => m.id !== memo.id));
-      
-      // Update supplier balance
-      setSuppliers(prev => prev.map(supplier => 
-        supplier.id === memo.supplierId 
-          ? { ...supplier, balance: supplier.balance - memo.balance, activeTrips: supplier.activeTrips - 1 }
-          : supplier
-      ));
+    const input = prompt('Enter paid date (YYYY-MM-DD). Leave blank for today:')?.trim();
+    const today = new Date().toISOString().split('T')[0];
+    const paidDate = input === '' || input === undefined ? today : input;
+
+    // Basic YYYY-MM-DD validation
+    const isValidDate = /^\d{4}-\d{2}-\d{2}$/.test(paidDate || '');
+    if (!isValidDate) {
+      alert('Invalid date format. Please use YYYY-MM-DD.');
+      return;
     }
+
+    (async () => {
+      try {
+        // Persist to backend; real-time socket will refresh memos list
+        await apiService.updateMemo(memo.id, {
+          status: 'paid',
+          paidDate,
+          updatedAt: new Date().toISOString(),
+        });
+
+        // Optimistic local updates for immediate feedback
+        const total = (memo.freight || 0) + (memo.commission || 0) + (memo.detention || 0) + (memo.rtoAmount || 0) + (memo.extraCharge || 0) - (memo.mamul || 0);
+        const paidAmount = total - (memo.balance || 0);
+        const paidMemo = { ...memo, status: 'paid' as const, paidDate, paidAmount, balance: 0 };
+        setPaidMemos(prev => [...prev, paidMemo]);
+        setMemos(prev => prev.filter(m => m.id !== memo.id));
+
+        // Update supplier balance
+        setSuppliers(prev => prev.map(supplier =>
+          supplier.id === memo.supplierId
+            ? { ...supplier, balance: supplier.balance - memo.balance, activeTrips: supplier.activeTrips - 1 }
+            : supplier
+        ));
+      } catch (error) {
+        console.error('Failed to mark memo as paid:', error);
+        alert('Failed to mark memo as paid. Please try again.');
+      }
+    })();
   };
 
   const handleSupplierSelect = (supplierId: string) => {
@@ -957,13 +984,27 @@ const Memo: React.FC = () => {
                   <div className="bg-white p-3 rounded border">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Total Amount</label>
                     <div className="text-lg font-semibold text-gray-900">
-                      {formatCurrency(viewingMemo.freight + viewingMemo.commission + viewingMemo.detention - viewingMemo.mamul)}
+                      {formatCurrency(
+                        (viewingMemo.freight || 0) +
+                        (viewingMemo.commission || 0) +
+                        (viewingMemo.detention || 0) +
+                        (viewingMemo.rtoAmount || 0) +
+                        (viewingMemo.extraCharge || 0) -
+                        (viewingMemo.mamul || 0)
+                      )}
                     </div>
                   </div>
                   <div className="bg-white p-3 rounded border">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Paid Amount</label>
                     <div className="text-lg font-semibold text-green-600">
-                      {formatCurrency((viewingMemo.freight + viewingMemo.commission + viewingMemo.detention - viewingMemo.mamul) - viewingMemo.balance)}
+                      {formatCurrency(
+                        ((viewingMemo.freight || 0) +
+                        (viewingMemo.commission || 0) +
+                        (viewingMemo.detention || 0) +
+                        (viewingMemo.rtoAmount || 0) +
+                        (viewingMemo.extraCharge || 0) -
+                        (viewingMemo.mamul || 0)) - (viewingMemo.balance || 0)
+                      )}
                     </div>
                   </div>
                   <div className="bg-white p-3 rounded border">

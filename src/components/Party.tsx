@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Eye, Search, Download } from 'lucide-react';
+import { Plus, Edit, Trash2, Eye, Search } from 'lucide-react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { STORAGE_KEYS } from '../utils/storage';
 import { Party as PartyType, Bill } from '../types';
-import { formatCurrency, formatDate, calculatePartyPendingBalance, fixAllBalances, synchronizePartyBalance } from '../utils/calculations';
+import { formatCurrency, formatDate, fixAllBalances } from '../utils/calculations';
 import { apiService, useRealTimeSync } from '../services/apiService';
 
 

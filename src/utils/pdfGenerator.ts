@@ -1,8 +1,7 @@
 import jsPDF from 'jspdf';
-import { Bill, Memo, LoadingSlip, Party } from '../types';
+import { Bill, Memo, LoadingSlip } from '../types';
 import { formatCurrency, formatDate } from './calculations';
 import { addBRCLogo } from './pdfGeneratorUtils';
-import { STORAGE_KEYS } from './storage';
 
 export const generateBillPDF = async (bill: Bill): Promise<void> => {
   console.log('Generating PDF for bill:', bill);

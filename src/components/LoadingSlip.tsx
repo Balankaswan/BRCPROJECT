@@ -14,12 +14,12 @@ import DateInput from './DateInput';
 import AutoCompleteLocationInput from './AutoCompleteLocationInput';
 import DragDropInput from './DragDropInput';
 import VehicleAutocomplete from './VehicleAutocomplete';
-import { apiService, useRealTimeSync } from '../services/apiService';
+import { apiService } from '../services/apiService';
 
 const LoadingSlip: React.FC = () => {
   const [loadingSlips, setLoadingSlips] = useLocalStorage<LoadingSlipType[]>(STORAGE_KEYS.LOADING_SLIPS, []);
-  const [memos, setMemos] = useLocalStorage<Memo[]>(STORAGE_KEYS.MEMOS, []);
-  const [bills, setBills] = useLocalStorage<Bill[]>(STORAGE_KEYS.BILLS, []);
+  const [, setMemos] = useLocalStorage<Memo[]>(STORAGE_KEYS.MEMOS, []);
+  const [, setBills] = useLocalStorage<Bill[]>(STORAGE_KEYS.BILLS, []);
   const [suppliers, setSuppliers] = useLocalStorage<Supplier[]>(STORAGE_KEYS.SUPPLIERS, []);
   const [parties, setParties] = useLocalStorage<Party[]>(STORAGE_KEYS.PARTIES, []);
   const { getNextNumber, getNextNumberPreview, updateCounterIfHigher } = useCounters();
@@ -352,6 +352,11 @@ const LoadingSlip: React.FC = () => {
 
   const createMemoFromSlip = async (slip: LoadingSlipType) => {
     console.log('🚀 Creating memo from loading slip:', slip);
+    // Prevent duplicate memo creation if already linked
+    if ((slip as any).linkedMemoId || slip.linkedMemoNo) {
+      alert(`This loading slip is already linked to Memo ${slip.linkedMemoNo || (slip as any).linkedMemoId}.`);
+      return;
+    }
     console.log('📋 Loading slip data:', {
       id: slip.id,
       slipNo: slip.slipNo,
@@ -501,28 +506,30 @@ const LoadingSlip: React.FC = () => {
       
       const createdMemo = await apiService.createMemo(backendMemo);
       console.log('✅ Memo created via backend API:', createdMemo);
+      const backendMemoId = createdMemo._id || createdMemo.id || memo.id;
       
-      // Update local state immediately for better UX
-      setLoadingSlips(prev => prev.map(s => s.id === slip.id ? { ...s, linkedMemoNo: memo.memoNo } : s));
-      setMemos(prev => [...prev, memo]);
+      // Refresh memos from API to ensure consistent shape and IDs
+      try {
+        const memosData = await apiService.getMemos();
+        setMemos(memosData);
+      } catch (e) {
+        // Fallback: push local memo with backend ID
+        setMemos(prev => [...prev.filter(m => m.memoNo !== memo.memoNo), { ...memo, id: backendMemoId }]);
+      }
+      
+      // Update local loading slip link immediately for better UX
+      setLoadingSlips(prev => prev.map(s => s.id === slip.id ? { ...s, linkedMemoNo: memo.memoNo, linkedMemoId: backendMemoId } : s));
       
       // CRITICAL FIX: Force localStorage update to prevent data loss
-      const updatedMemos = [...memos, memo];
-      const updatedLoadingSlips = loadingSlips.map(s => s.id === slip.id ? { ...s, linkedMemoNo: memo.memoNo } : s);
-      
-      localStorage.setItem(STORAGE_KEYS.MEMOS, JSON.stringify(updatedMemos));
+      const updatedLoadingSlips = loadingSlips.map(s => s.id === slip.id ? { ...s, linkedMemoNo: memo.memoNo, linkedMemoId: backendMemoId } : s);
       localStorage.setItem(STORAGE_KEYS.LOADING_SLIPS, JSON.stringify(updatedLoadingSlips));
-      
-      // Also update the state to ensure consistency
-      setMemos(updatedMemos);
-      setLoadingSlips(updatedLoadingSlips);
       
       console.log('✅ Memo created and linked to loading slip');
       console.log('🔄 Data saved to localStorage for stability');
       
       // CRITICAL FIX: Update loading slip in database to show the link
       try {
-        const updatedSlip = { ...slip, linkedMemoNo: memo.memoNo };
+        const updatedSlip = { ...slip, linkedMemoNo: memo.memoNo, linkedMemoId: backendMemoId };
         const backendSlip = {
           slipNumber: updatedSlip.slipNo,
           loadingDate: updatedSlip.date,
@@ -538,7 +545,7 @@ const LoadingSlip: React.FC = () => {
           freight: updatedSlip.freight,
           advance: updatedSlip.advanceAmount,
           linkedMemoNo: memo.memoNo,
-          linkedMemoId: memo.id, // Add the actual memo ID
+          linkedMemoId: backendMemoId, // Use backend memo ID
           createdAt: updatedSlip.createdAt
         };
         
@@ -548,19 +555,19 @@ const LoadingSlip: React.FC = () => {
         
         // Also update the local state to reflect the change immediately
         setLoadingSlips(prev => prev.map(s => 
-          s.id === slip.id ? { ...s, linkedMemoNo: memo.memoNo, linkedMemoId: memo.id } : s
+          s.id === slip.id ? { ...s, linkedMemoNo: memo.memoNo, linkedMemoId: backendMemoId } : s
         ));
         
         // CRITICAL FIX: Update localStorage to ensure persistence
         const updatedLoadingSlips = loadingSlips.map(s => 
-          s.id === slip.id ? { ...s, linkedMemoNo: memo.memoNo, linkedMemoId: memo.id } : s
+          s.id === slip.id ? { ...s, linkedMemoNo: memo.memoNo, linkedMemoId: backendMemoId } : s
         );
         localStorage.setItem(STORAGE_KEYS.LOADING_SLIPS, JSON.stringify(updatedLoadingSlips));
         
       } catch (error) {
-        console.warn('⚠️ Failed to update loading slip in database:', error);
+        console.warn(' Failed to update loading slip in database:', error);
         // Even if database update fails, ensure local state is updated
-        console.log('🔄 Falling back to local state update only');
+        console.log(' Falling back to local state update only');
       }
       
       alert(`Memo ${memo.memoNo} created successfully and linked to loading slip!`);
@@ -581,6 +588,11 @@ const LoadingSlip: React.FC = () => {
   };
 
   const createBillFromSlip = async (slip: LoadingSlipType) => {
+    // Prevent duplicate bill creation if already linked
+    if ((slip as any).linkedBillId || slip.linkedBillNo) {
+      alert(`This loading slip is already linked to Bill ${slip.linkedBillNo || (slip as any).linkedBillId}.`);
+      return;
+    }
     // Find or create party
     let party = parties.find(p => p.name.toLowerCase() === slip.partyName.toLowerCase());
     if (!party) {
@@ -670,7 +682,20 @@ const LoadingSlip: React.FC = () => {
         totalFreight: bill.totalFreight,
         status: bill.status,
         linkedLoadingSlipId: slip.id,
-        trips: bill.trips,
+        trips: bill.trips.map(t => ({
+          cnNo: t.cnNo,
+          loadingDate: t.loadingDate,
+          from: t.from,
+          to: t.to,
+          vehicleNumber: t.vehicle, // backend expects vehicleNumber
+          weight: t.weight,
+          freight: t.freight,
+          rtoChallan: t.rtoChallan,
+          detention: t.detention || 0,
+          extraWeight: 0,
+          advance: 0,
+          balance: t.freight
+        })),
         advances: bill.advances,
         balance: bill.balance,
         createdAt: bill.createdAt
@@ -680,25 +705,27 @@ const LoadingSlip: React.FC = () => {
       
       const createdBill = await apiService.createBill(backendBill);
       console.log('✅ Bill created via backend API:', createdBill);
+      const backendBillId = createdBill._id || createdBill.id || bill.id;
       
-      // Update local state immediately to prevent data loss
-      setBills(prev => [...prev, bill]);
-      setLoadingSlips(prev => prev.map(s => s.id === slip.id ? { ...s, linkedBillNo: bill.billNo } : s));
+      // Refresh bills from API to ensure consistent shape and IDs
+      try {
+        const billsData = await apiService.getBills();
+        setBills(billsData);
+      } catch (e) {
+        // Fallback: push local bill with backend ID
+        setBills(prev => [...prev.filter(b => b.billNo !== bill.billNo), { ...bill, id: backendBillId }]);
+      }
+      
+      // Update local loading slip link immediately for better UX
+      setLoadingSlips(prev => prev.map(s => s.id === slip.id ? { ...s, linkedBillNo: bill.billNo, linkedBillId: backendBillId } : s));
       
       // CRITICAL FIX: Force localStorage update to prevent data loss
-      const updatedBills = [...bills, bill];
-      const updatedLoadingSlips = loadingSlips.map(s => s.id === slip.id ? { ...s, linkedBillNo: bill.billNo } : s);
-      
-      localStorage.setItem(STORAGE_KEYS.BILLS, JSON.stringify(updatedBills));
-      localStorage.setItem(STORAGE_KEYS.LOADING_SLIPS, JSON.stringify(updatedLoadingSlips));
-      
-      // Also update the state to ensure consistency
-      setBills(updatedBills);
-      setLoadingSlips(updatedLoadingSlips);
+      const updatedLoadingSlips2 = loadingSlips.map(s => s.id === slip.id ? { ...s, linkedBillNo: bill.billNo, linkedBillId: backendBillId } : s);
+      localStorage.setItem(STORAGE_KEYS.LOADING_SLIPS, JSON.stringify(updatedLoadingSlips2));
 
       // CRITICAL FIX: Update loading slip in database to show the bill link
       try {
-        const updatedSlip = { ...slip, linkedBillNo: bill.billNo };
+        const updatedSlip = { ...slip, linkedBillNo: bill.billNo, linkedBillId: backendBillId };
         const backendSlip = {
           slipNumber: updatedSlip.slipNo,
           loadingDate: updatedSlip.date,
@@ -714,6 +741,7 @@ const LoadingSlip: React.FC = () => {
           freight: updatedSlip.freight,
           advance: updatedSlip.advanceAmount,
           linkedBillNo: bill.billNo,
+          linkedBillId: backendBillId,
           createdAt: updatedSlip.createdAt
         };
         
@@ -723,8 +751,14 @@ const LoadingSlip: React.FC = () => {
         
         // Also update the local state to reflect the change immediately
         setLoadingSlips(prev => prev.map(s => 
-          s.id === slip.id ? { ...s, linkedBillNo: bill.billNo, linkedBillId: bill.id } : s
+          s.id === slip.id ? { ...s, linkedBillNo: bill.billNo, linkedBillId: backendBillId } : s
         ));
+        
+        // Update party balance and activeTrips
+        const partyBills = (await apiService.getBills()).filter((b: any) => b.partyName === party!.name);
+        const partyBalance = partyBills.reduce((sum: number, b: any) => sum + (b.balance || 0), 0);
+        const tripsCount = partyBills.reduce((sum: number, b: any) => sum + (b.trips?.length || 0), 0);
+        setParties(prev => prev.map(p => p.id === party!.id ? { ...p, balance: partyBalance, activeTrips: tripsCount } : p));
       } catch (error) {
         console.warn('⚠️ Failed to update loading slip in database:', error);
       }
