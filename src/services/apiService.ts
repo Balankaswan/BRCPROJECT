@@ -8,11 +8,11 @@ const isLocalhost = window.location.hostname === 'localhost' ||
                    window.location.port === '5173';
 
 const API_BASE_URL = isLocalhost 
-  ? 'http://192.168.1.13:3001/api'
+  ? 'http://localhost:3001/api'
   : 'https://brcproject.onrender.com/api';
 
 const SOCKET_URL = isLocalhost 
-  ? 'http://192.168.1.13:3001'
+  ? 'http://localhost:3001'
   : 'https://brcproject.onrender.com';
 
 console.log('🔍 Debug Info:');
@@ -159,7 +159,11 @@ class ApiService {
       dimensions: item.dimensions,
       freight: item.freight,
       rtoAmount: item.rtoAmount,
-      advanceAmount: item.advanceAmount,
+      advanceAmount: item.advance, // backend uses 'advance'
+      linkedMemoNo: item.linkedMemoNo || null,
+      linkedBillNo: item.linkedBillNo || null,
+      linkedMemoId: item.linkedMemoId || null,
+      linkedBillId: item.linkedBillId || null,
       createdAt: item.createdAt
     }));
   }
@@ -187,7 +191,35 @@ class ApiService {
 
   // Memos
   async getMemos() {
-    return this.getAll('memos');
+    const backendData = await this.getAll('memos');
+    // Map to frontend shape expected by components
+    return backendData.map((item: any) => ({
+      id: item._id || item.id,
+      memoNo: item.memoNumber,
+      loadingDate: item.loadingDate,
+      from: item.from_location,
+      to: item.to_location,
+      supplierId: item.supplierId, // may be undefined; UI mostly uses supplierName
+      supplierName: item.supplierName,
+      partyName: item.partyName,
+      vehicle: item.vehicleNumber,
+      weight: item.weight,
+      material: item.materialType,
+      freight: item.freight,
+      mamul: item.mamul || 0,
+      detention: item.detention || 0,
+      rtoAmount: item.rtoAmount || 0,
+      extraCharge: item.extraCharge || 0,
+      commission: item.commission || 0,
+      balance: item.balance || 0,
+      status: item.status || 'pending',
+      paidDate: item.paidDate || null,
+      paidAmount: item.paidAmount || 0,
+      advances: item.advances || [],
+      notes: item.notes || '',
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt
+    }));
   }
 
   async createMemo(data: any) {
@@ -200,7 +232,44 @@ class ApiService {
 
   // Bills
   async getBills() {
-    return this.getAll('bills');
+    const backendData = await this.getAll('bills');
+    // Map to frontend Bill shape expected by components
+    return backendData.map((item: any) => ({
+      id: item._id || item.id,
+      billNo: item.billNumber,
+      billDate: item.billDate,
+      partyId: item.partyId, // optional
+      partyName: item.partyName,
+      trips: (item.trips || []).map((t: any) => ({
+        id: t.id || `${item._id || item.id}-${t.cnNo || ''}`,
+        cnNo: t.cnNo,
+        loadingDate: t.loadingDate,
+        from: t.from,
+        to: t.to,
+        vehicle: t.vehicleNumber || t.vehicle, // normalize to 'vehicle'
+        weight: t.weight,
+        freight: t.freight,
+        rtoChallan: t.rtoChallan || '',
+        detention: t.detention || 0,
+        mamul: t.mamul || 0
+      })),
+      totalFreight: item.totalFreight ?? item.totalAmount ?? 0,
+      mamul: item.mamul || 0,
+      detention: item.detention || 0,
+      rtoAmount: item.rtoAmount || 0,
+      extraCharges: item.extraCharges || item.extraCharge || 0,
+      advances: item.advances || [],
+      balance: item.balance || 0,
+      status: item.status || 'pending',
+      receivedDate: item.receivedDate || null,
+      receivedAmount: item.receivedAmount || 0,
+      payments: item.payments || [],
+      totalDeductions: item.totalDeductions || 0,
+      netAmountReceived: item.netAmountReceived || 0,
+      notes: item.notes || '',
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt
+    }));
   }
 
   async createBill(data: any) {
@@ -226,6 +295,14 @@ class ApiService {
 
   async deleteLoadingSlip(id: string) {
     return this.delete('loading_slips', id);
+  }
+
+  async deleteMemo(id: string) {
+    return this.delete('memos', id);
+  }
+
+  async deleteBill(id: string) {
+    return this.delete('bills', id);
   }
 
   async deleteSupplier(id: string) {
@@ -331,7 +408,12 @@ export const useRealTimeSync = (tableName: string, callback: (data: any[]) => vo
   // Enhanced error handling and retry mechanism
   const refreshDataWithRetry = async (retryCount = 0) => {
     try {
-      const data = await apiService.getAll(tableName);
+      // Use specific getters to keep frontend mapping consistent
+      let data: any[] = [];
+      if (tableName === 'loading_slips') data = await apiService.getLoadingSlips();
+      else if (tableName === 'memos') data = await apiService.getMemos();
+      else if (tableName === 'bills') data = await apiService.getBills();
+      else data = await apiService.getAll(tableName);
       callback(data);
       console.log(`✅ Successfully refreshed ${tableName} data`);
     } catch (error) {

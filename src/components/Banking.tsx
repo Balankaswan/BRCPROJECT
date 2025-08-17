@@ -10,6 +10,16 @@ import {
   calculateBillReceivedAmount
 } from '../utils/balanceCalculations';
 import AutocompleteDropdown from './AutocompleteDropdown';
+import {
+  BankEntry,
+  Ledger,
+  Bill,
+  Memo,
+  Party,
+  Supplier,
+  LedgerEntry,
+  Advance
+} from '../types';
 
 const Banking: React.FC = () => {
   const [bankEntries, setBankEntries] = useLocalStorage<BankEntry[]>(STORAGE_KEYS.BANK_ENTRIES, []);
@@ -172,7 +182,7 @@ const Banking: React.FC = () => {
     setBills(prev => prev.map(bill => {
       if (bill.id === billId) {
         // Validate advance amount doesn't exceed bill total
-        const currentAdvanceTotal = bill.advances.reduce((sum, adv) => sum + adv.amount, 0);
+        const currentAdvanceTotal = bill.advances.reduce((sum: number, adv: Advance) => sum + adv.amount, 0);
         const newAdvanceTotal = transactionType === 'credit' 
           ? currentAdvanceTotal + advanceAmount 
           : currentAdvanceTotal - advanceAmount;
@@ -189,8 +199,8 @@ const Banking: React.FC = () => {
           narration: formData.narration || `Advance ${transactionType} from Banking`
         };
         
-        const updatedAdvances = [...bill.advances, newAdvance];
-        const totalAdvances = updatedAdvances.reduce((sum, adv) => sum + adv.amount, 0);
+        const updatedAdvances: Advance[] = [...bill.advances, newAdvance];
+        const totalAdvances = updatedAdvances.reduce((sum: number, adv: Advance) => sum + adv.amount, 0);
         const newBalance = bill.totalFreight + (bill.detention || 0) + (bill.rtoAmount || 0) + (bill.extraCharges || 0) - totalAdvances - (bill.mamul || 0);
         
         return {
@@ -208,7 +218,7 @@ const Banking: React.FC = () => {
     setMemos(prev => prev.map(memo => {
       if (memo.id === memoId) {
         // Validate advance amount doesn't exceed memo total
-        const currentAdvanceTotal = memo.advances.reduce((sum, adv) => sum + adv.amount, 0);
+        const currentAdvanceTotal = memo.advances.reduce((sum: number, adv: Advance) => sum + adv.amount, 0);
         const newAdvanceTotal = transactionType === 'credit' 
           ? currentAdvanceTotal + advanceAmount 
           : currentAdvanceTotal - advanceAmount;
@@ -225,8 +235,8 @@ const Banking: React.FC = () => {
           narration: formData.narration || `Advance ${transactionType} from Banking`
         };
         
-        const updatedAdvances = [...memo.advances, newAdvance];
-        const totalAdvances = updatedAdvances.reduce((sum, adv) => sum + adv.amount, 0);
+        const updatedAdvances: Advance[] = [...memo.advances, newAdvance];
+        const totalAdvances = updatedAdvances.reduce((sum: number, adv: Advance) => sum + adv.amount, 0);
         const newBalance = memo.freight + (memo.detention || 0) + (memo.extraCharge || 0) - totalAdvances - (memo.commission || 0) - (memo.mamul || 0);
         
         return {
@@ -344,7 +354,7 @@ const Banking: React.FC = () => {
       
       // Calculate bill amounts using the correct formula
       const totalBillAmount = linkedBill.totalFreight + (linkedBill.detention || 0) + (linkedBill.rtoAmount || 0) + (linkedBill.extraCharges || 0) - (linkedBill.mamul || 0);
-      const totalAdvances = (linkedBill.advances || []).reduce((sum, adv) => sum + adv.amount, 0);
+      const totalAdvances = (linkedBill.advances || []).reduce((sum: number, adv: Advance) => sum + adv.amount, 0);
       
       // Calculate remaining received amount from other bank entries (excluding the deleted one)
       const remainingReceivedAmount = calculateBillReceivedAmount(linkedBill.id, updatedBankEntries);
@@ -390,11 +400,11 @@ const Banking: React.FC = () => {
       if (party) {
         console.log(`👤 Updating party balance for ${party.name}`);
         const partyBills = [...bills.filter(b => b.id !== linkedBill.id), updatedBill].filter(b => b.partyId === party.id);
-        const newPartyBalance = partyBills.reduce((sum, bill) => sum + bill.balance, 0);
+        const newPartyBalance = partyBills.reduce((sum: number, bill: Bill) => sum + bill.balance, 0);
         
         setParties(prev => prev.map(p => 
           p.id === party.id 
-            ? { ...p, balance: newPartyBalance, activeTrips: partyBills.reduce((sum, bill) => sum + bill.trips.length, 0) }
+            ? { ...p, balance: newPartyBalance, activeTrips: partyBills.reduce((sum: number, bill: Bill) => sum + bill.trips.length, 0) }
             : p
         ));
       }
@@ -442,7 +452,7 @@ const Banking: React.FC = () => {
       
       // Recalculate bill balance
       const totalBillAmount = linkedBill.totalFreight + (linkedBill.detention || 0) + (linkedBill.rtoAmount || 0) + (linkedBill.extraCharges || 0) - (linkedBill.mamul || 0);
-      const totalAdvances = updatedAdvances.reduce((sum, adv) => sum + adv.amount, 0);
+      const totalAdvances = updatedAdvances.reduce((sum: number, adv: Advance) => sum + adv.amount, 0);
       const totalPayments = calculateBillReceivedAmount(linkedBill.id, bankEntries.filter(e => e.id !== deletedEntry.id));
       const newBalance = Math.max(0, totalBillAmount - totalAdvances - totalPayments);
       
@@ -592,7 +602,7 @@ const Banking: React.FC = () => {
       // Recalculate memo balance using correct formula
       // Formula: Freight + Detention + Extra - Advances - Commission - Mamul
       const totalMemoAmount = linkedMemo.freight + (linkedMemo.detention || 0) + (linkedMemo.extraCharge || 0);
-      const totalAdvances = updatedAdvances.reduce((sum, adv) => sum + adv.amount, 0);
+      const totalAdvances = updatedAdvances.reduce((sum: number, adv: Advance) => sum + adv.amount, 0);
       const totalDeductions = (linkedMemo.commission || 0) + (linkedMemo.mamul || 0);
       const newBalance = Math.max(0, totalMemoAmount - totalAdvances - totalDeductions);
       
@@ -757,8 +767,8 @@ const Banking: React.FC = () => {
           console.log('🔄 Processing EXPENSE deletion...');
           setLedgers(prev => 
             prev.map(ledger => {
-              const updatedEntries = ledger.entries.filter(entry => entry.relatedId !== id);
-              const newBalance = updatedEntries.reduce((sum, entry) => sum + entry.credit - entry.debit, 0);
+              const updatedEntries = ledger.entries.filter((entry: LedgerEntry) => entry.relatedId !== id);
+              const newBalance = updatedEntries.reduce((sum: number, entry: LedgerEntry) => sum + entry.credit - entry.debit, 0);
               
               return {
                 ...ledger,
@@ -800,12 +810,12 @@ const Banking: React.FC = () => {
   };
 
   const totalCredit = bankEntries
-    .filter(entry => entry.type === 'credit')
-    .reduce((sum, entry) => sum + entry.amount, 0);
+    .filter((entry: BankEntry) => entry.type === 'credit')
+    .reduce((sum: number, entry: BankEntry) => sum + entry.amount, 0);
 
   const totalDebit = bankEntries
-    .filter(entry => entry.type === 'debit')
-    .reduce((sum, entry) => sum + entry.amount, 0);
+    .filter((entry: BankEntry) => entry.type === 'debit')
+    .reduce((sum: number, entry: BankEntry) => sum + entry.amount, 0);
 
   const balance = totalCredit - totalDebit;
 

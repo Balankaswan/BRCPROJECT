@@ -30,8 +30,13 @@ const Memo: React.FC = () => {
     loadData();
   }, []);
 
-  // Set up real-time sync
-  useRealTimeSync('memos', setMemos);
+  // Set up real-time sync with cleanup to avoid duplicate listeners
+  useEffect(() => {
+    const unsubscribe = useRealTimeSync('memos', setMemos);
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
+  }, [setMemos]);
   const [suppliers, setSuppliers] = useLocalStorage<Supplier[]>(STORAGE_KEYS.SUPPLIERS, []);
   const [paidMemos, setPaidMemos] = useLocalStorage<MemoType[]>(STORAGE_KEYS.PAID_MEMOS, []);
   const { getNextNumber, getNextNumberPreview, updateCounterIfHigher } = useCounters();
@@ -223,17 +228,38 @@ const Memo: React.FC = () => {
     setShowForm(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Are you sure you want to delete this memo?')) {
-      const memo = memos.find(m => m.id === id);
-      if (memo) {
-        setMemos(prev => prev.filter(m => m.id !== id));
-        // Update supplier balance
-        setSuppliers(prev => prev.map(supplier => 
-          supplier.id === memo.supplierId 
-            ? { ...supplier, balance: supplier.balance - memo.balance, activeTrips: supplier.activeTrips - 1 }
-            : supplier
-        ));
+      try {
+        const memo = memos.find(m => m.id === id);
+        if (memo) {
+          // Delete from backend first
+          try {
+            await apiService.deleteMemo(id);
+            console.log('✅ Memo deleted from backend');
+          } catch (error) {
+            console.warn('⚠️ Failed to delete memo from backend:', error);
+          }
+          
+          // Update local state
+          setMemos(prev => prev.filter(m => m.id !== id));
+          
+          // Update supplier balance
+          setSuppliers(prev => prev.map(supplier => 
+            supplier.id === memo.supplierId 
+              ? { ...supplier, balance: supplier.balance - memo.balance, activeTrips: supplier.activeTrips - 1 }
+              : supplier
+          ));
+          
+          // Update localStorage
+          const updatedMemos = memos.filter(m => m.id !== id);
+          localStorage.setItem(STORAGE_KEYS.MEMOS, JSON.stringify(updatedMemos));
+          
+          alert('Memo deleted successfully!');
+        }
+      } catch (error) {
+        console.error('❌ Failed to delete memo:', error);
+        alert('Failed to delete memo. Please try again.');
       }
     }
   };

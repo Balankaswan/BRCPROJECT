@@ -17,9 +17,9 @@ import VehicleAutocomplete from './VehicleAutocomplete';
 import { apiService, useRealTimeSync } from '../services/apiService';
 
 const LoadingSlip: React.FC = () => {
-  const [loadingSlips, setLoadingSlips] = useState<LoadingSlipType[]>([]);
-  const [, setMemos] = useLocalStorage<Memo[]>(STORAGE_KEYS.MEMOS, []);
-  const [, setBills] = useLocalStorage<Bill[]>(STORAGE_KEYS.BILLS, []);
+  const [loadingSlips, setLoadingSlips] = useLocalStorage<LoadingSlipType[]>(STORAGE_KEYS.LOADING_SLIPS, []);
+  const [memos, setMemos] = useLocalStorage<Memo[]>(STORAGE_KEYS.MEMOS, []);
+  const [bills, setBills] = useLocalStorage<Bill[]>(STORAGE_KEYS.BILLS, []);
   const [suppliers, setSuppliers] = useLocalStorage<Supplier[]>(STORAGE_KEYS.SUPPLIERS, []);
   const [parties, setParties] = useLocalStorage<Party[]>(STORAGE_KEYS.PARTIES, []);
   const { getNextNumber, getNextNumberPreview, updateCounterIfHigher } = useCounters();
@@ -29,40 +29,107 @@ const LoadingSlip: React.FC = () => {
   const [previewSlip, setPreviewSlip] = useState<LoadingSlipType | null>(null);
   const { isOpen: isPreviewOpen, openModal: openPreview, closeModal: closePreview } = usePDFPreviewModal();
 
-  // Load data from API and set up real-time sync
+  // Initialize location suggestions and vehicle mappings
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const data = await apiService.getLoadingSlips();
-        // Transform API data to include linkedMemoNo and linkedBillNo fields
-        const transformedData = data.map((slip: any) => ({
-          ...slip,
-          slipNo: slip.slipNumber || slip.slipNo,
-          vehicleNo: slip.vehicleNumber || slip.vehicleNo,
-          linkedMemoNo: slip.linkedMemoNo || null,
-          linkedBillNo: slip.linkedBillNo || null
-        }));
-        setLoadingSlips(transformedData);
-      } catch (error) {
-        console.error('Error loading loading slips:', error);
-      }
-    };
-    loadData();
     initializeLocationSuggestionsFromExistingData();
     initializeVehicleSupplierMappingsFromExistingData();
   }, []);
 
-  // Set up real-time sync with data transformation
-  useRealTimeSync('loading_slips', (data: any[]) => {
-    const transformedData = data.map((slip: any) => ({
-      ...slip,
-      slipNo: slip.slipNumber || slip.slipNo,
-      vehicleNo: slip.vehicleNumber || slip.vehicleNo,
-      linkedMemoNo: slip.linkedMemoNo || null,
-      linkedBillNo: slip.linkedBillNo || null
-    }));
-    setLoadingSlips(transformedData);
-  });
+  // REAL-TIME DATABASE SYNC - This ensures data consistency across devices
+  useEffect(() => {
+    console.log('🚀 Initializing real-time database sync...');
+    
+    // Initial data load
+    const loadInitialData = async () => {
+      try {
+        const [loadingSlipsData, memosData, billsData] = await Promise.all([
+          apiService.getLoadingSlips(),
+          apiService.getMemos(),
+          apiService.getBills()
+        ]);
+        
+        // Transform loading slips data with proper field mapping
+        const transformedLoadingSlips = loadingSlipsData.map((slip: any) => {
+          const transformed = {
+            ...slip,
+            id: slip._id || slip.id,
+            slipNo: slip.slipNumber || slip.slipNo,
+            date: slip.loadingDate || slip.date,
+            vehicleNo: slip.vehicleNumber || slip.vehicleNo,
+            from: slip.from_location || slip.from,
+            to: slip.to_location || slip.to,
+            material: slip.materialType || slip.material,
+            weight: slip.weight || 0,
+            freight: slip.freight || 0,
+            partyName: slip.partyName || '',
+            supplierDetail: slip.supplierDetail || '',
+            linkedMemoNo: slip.linkedMemoNo || null,
+            linkedBillNo: slip.linkedBillNo || null,
+            // Ensure we have the raw backend fields for proper mapping
+            _vehicleNumber: slip.vehicleNumber,
+            _from_location: slip.from_location,
+            _to_location: slip.to_location,
+            _materialType: slip.materialType,
+            _loadingDate: slip.loadingDate
+          };
+          
+          console.log('🔄 Transformed slip:', {
+            original: { 
+              _id: slip._id, 
+              slipNumber: slip.slipNumber, 
+              vehicleNumber: slip.vehicleNumber,
+              from_location: slip.from_location,
+              to_location: slip.to_location,
+              materialType: slip.materialType,
+              loadingDate: slip.loadingDate
+            },
+            transformed: { 
+              id: transformed.id, 
+              slipNo: transformed.slipNo, 
+              vehicleNo: transformed.vehicleNo,
+              from: transformed.from,
+              to: transformed.to,
+              material: transformed.material,
+              date: transformed.date
+            }
+          });
+          
+          return transformed;
+        });
+        
+        // Update state with new data
+        setLoadingSlips(transformedLoadingSlips);
+        setMemos(memosData);
+        setBills(billsData);
+        
+        console.log('✅ Initial data loaded:', {
+          loadingSlips: transformedLoadingSlips.length,
+          memos: memosData.length,
+          bills: billsData.length
+        });
+        
+      } catch (error) {
+        console.error('❌ Initial data load failed:', error);
+      }
+    };
+    
+    // Load initial data
+    loadInitialData();
+    
+    // Set up real-time sync for cross-device updates
+    const syncInterval = setInterval(async () => {
+      try {
+        if (document.hasFocus()) { // Only sync when user is active
+          console.log('🔄 Performing background sync...');
+          await loadInitialData();
+        }
+      } catch (error) {
+        console.warn('⚠️ Background sync failed:', error);
+      }
+    }, 30000); // Sync every 30 seconds
+    
+    return () => clearInterval(syncInterval);
+  }, []);
 
   const [formData, setFormData] = useState({
     slipNo: getNextNumberPreview('loadingSlip'),
@@ -284,6 +351,47 @@ const LoadingSlip: React.FC = () => {
   };
 
   const createMemoFromSlip = async (slip: LoadingSlipType) => {
+    console.log('🚀 Creating memo from loading slip:', slip);
+    console.log('📋 Loading slip data:', {
+      id: slip.id,
+      slipNo: slip.slipNo,
+      date: slip.date,
+      from: slip.from,
+      to: slip.to,
+      vehicleNo: slip.vehicleNo,
+      material: slip.material,
+      weight: slip.weight,
+      freight: slip.freight,
+      supplierDetail: slip.supplierDetail,
+      partyName: slip.partyName
+    });
+    
+    // Debug: Check if data transformation is working
+    console.log('🔍 Raw slip data check:', {
+      _id: (slip as any)._id,
+      slipNumber: (slip as any).slipNumber,
+      loadingDate: (slip as any).loadingDate,
+      vehicleNumber: (slip as any).vehicleNumber,
+      from_location: (slip as any).from_location,
+      to_location: (slip as any).to_location,
+      materialType: (slip as any).materialType
+    });
+    
+    // CRITICAL FIX: Proper field mapping from backend to frontend
+    const actualVehicleNo = (slip as any).vehicleNumber || slip.vehicleNo || 'UNKNOWN';
+    const actualFrom = (slip as any).from_location || slip.from || 'UNKNOWN';
+    const actualTo = (slip as any).to_location || slip.to || 'UNKNOWN';
+    const actualMaterial = (slip as any).materialType || slip.material || 'UNKNOWN';
+    const actualDate = (slip as any).loadingDate || slip.date || 'UNKNOWN';
+    
+    console.log('🔧 Actual data being used:', {
+      vehicleNo: actualVehicleNo,
+      from: actualFrom,
+      to: actualTo,
+      material: actualMaterial,
+      date: actualDate
+    });
+    
     // Find or create supplier using supplierDetail, not partyName
     let supplier = suppliers.find(s => s.name.toLowerCase() === slip.supplierDetail.toLowerCase());
     if (!supplier) {
@@ -314,39 +422,38 @@ const LoadingSlip: React.FC = () => {
     const commission = calculateCommission(freight);
     const mamul = 0; // Default mamul
     const detention = 0; // Default detention
-    const advances = slip.advanceAmount ? [{
-      id: Date.now().toString(),
-      date: slip.date,
-      amount: parseFloat(slip.advanceAmount.toString()),
-      narration: 'Advance from loading slip'
-    }] : [];
+    const advances: { id: string; date: string; amount: number; narration: string }[] = []; // No advance amount from loading slip
     const balance = calculateMemoBalance(freight, advances, commission, mamul, detention, 0, 0);
 
     // Validate required fields before creating memo
-    if (!slip.date || !slip.from || !slip.to || !slip.vehicleNo || !slip.material || !slip.weight) {
+    if (!actualDate || !actualFrom || !actualTo || !actualVehicleNo || !actualMaterial || !slip.weight) {
       console.error('Missing required fields:', { 
-        date: slip.date, 
-        from: slip.from, 
-        to: slip.to, 
-        vehicleNo: slip.vehicleNo, 
-        material: slip.material, 
+        date: actualDate, 
+        from: actualFrom, 
+        to: actualTo, 
+        vehicleNo: actualVehicleNo, 
+        material: actualMaterial, 
         weight: slip.weight 
       });
       alert('Cannot create memo: Missing required fields (date, from, to, vehicle, material, or weight)');
       return;
     }
 
+    // Generate memo number with proper format
+    const memoNumber = getNextNumber('memo');
+    console.log('🔢 Generated memo number:', memoNumber);
+    
     const memo: Memo = {
       id: Date.now().toString(),
-      memoNo: getNextNumber('memo'),
-      loadingDate: slip.date,
-      from: slip.from,
-      to: slip.to,
+      memoNo: memoNumber,
+      loadingDate: actualDate,
+      from: actualFrom,
+      to: actualTo,
       supplierId: supplier.id,
       supplierName: supplier.name,
       partyName: slip.partyName, // This should remain as partyName from Loading Slip
-      vehicle: slip.vehicleNo,
-      material: slip.material,
+      vehicle: actualVehicleNo,
+      material: actualMaterial,
       weight: slip.weight,
       freight,
       commission,
@@ -395,52 +502,66 @@ const LoadingSlip: React.FC = () => {
       const createdMemo = await apiService.createMemo(backendMemo);
       console.log('✅ Memo created via backend API:', createdMemo);
       
-      // Update loading slip with linked memo number via API
-      const updatedSlip = { ...slip, linkedMemoNo: memo.memoNo };
-      const backendSlip = {
-        slipNumber: updatedSlip.slipNo,
-        loadingDate: updatedSlip.date,
-        vehicleNumber: updatedSlip.vehicleNo,
-        from_location: updatedSlip.from,
-        to_location: updatedSlip.to,
-        partyName: updatedSlip.partyName,
-        partyPersonName: updatedSlip.partyPersonName,
-        supplierDetail: updatedSlip.supplierDetail,
-        materialType: updatedSlip.material,
-        weight: updatedSlip.weight,
-        dimensions: updatedSlip.dimensions,
-        freight: updatedSlip.freight,
-        advance: updatedSlip.advanceAmount, // Backend expects 'advance' not 'advanceAmount'
-        linkedMemoNo: memo.memoNo,
-        createdAt: updatedSlip.createdAt
-      };
+      // Update local state immediately for better UX
+      setLoadingSlips(prev => prev.map(s => s.id === slip.id ? { ...s, linkedMemoNo: memo.memoNo } : s));
+      setMemos(prev => [...prev, memo]);
       
-      await apiService.updateLoadingSlip(slip.id, backendSlip);
-      console.log('✅ Loading slip updated with memo link via backend API');
+      // CRITICAL FIX: Force localStorage update to prevent data loss
+      const updatedMemos = [...memos, memo];
+      const updatedLoadingSlips = loadingSlips.map(s => s.id === slip.id ? { ...s, linkedMemoNo: memo.memoNo } : s);
       
-      // Wait a moment for real-time sync to propagate
-      setTimeout(async () => {
-        try {
-          // Refresh data from API to ensure consistency
-          const [updatedLoadingSlips, updatedMemos] = await Promise.all([
-            apiService.getLoadingSlips(),
-            apiService.getMemos()
-          ]);
-          // Transform loading slips data
-          const transformedLoadingSlips = updatedLoadingSlips.map((slip: any) => ({
-            ...slip,
-            slipNo: slip.slipNumber || slip.slipNo,
-            vehicleNo: slip.vehicleNumber || slip.vehicleNo,
-            linkedMemoNo: slip.linkedMemoNo || null,
-            linkedBillNo: slip.linkedBillNo || null
-          }));
-          setLoadingSlips(transformedLoadingSlips);
-          setMemos(updatedMemos);
-          console.log('✅ Data refreshed from API after memo creation');
-        } catch (refreshError) {
-          console.warn('⚠️ Failed to refresh data from API:', refreshError);
-        }
-      }, 1000);
+      localStorage.setItem(STORAGE_KEYS.MEMOS, JSON.stringify(updatedMemos));
+      localStorage.setItem(STORAGE_KEYS.LOADING_SLIPS, JSON.stringify(updatedLoadingSlips));
+      
+      // Also update the state to ensure consistency
+      setMemos(updatedMemos);
+      setLoadingSlips(updatedLoadingSlips);
+      
+      console.log('✅ Memo created and linked to loading slip');
+      console.log('🔄 Data saved to localStorage for stability');
+      
+      // CRITICAL FIX: Update loading slip in database to show the link
+      try {
+        const updatedSlip = { ...slip, linkedMemoNo: memo.memoNo };
+        const backendSlip = {
+          slipNumber: updatedSlip.slipNo,
+          loadingDate: updatedSlip.date,
+          vehicleNumber: updatedSlip.vehicleNo,
+          from_location: updatedSlip.from,
+          to_location: updatedSlip.to,
+          partyName: updatedSlip.partyName,
+          partyPersonName: updatedSlip.partyPersonName,
+          supplierDetail: updatedSlip.supplierDetail,
+          materialType: updatedSlip.material,
+          weight: updatedSlip.weight,
+          dimensions: updatedSlip.dimensions,
+          freight: updatedSlip.freight,
+          advance: updatedSlip.advanceAmount,
+          linkedMemoNo: memo.memoNo,
+          linkedMemoId: memo.id, // Add the actual memo ID
+          createdAt: updatedSlip.createdAt
+        };
+        
+        console.log('🔧 Updating loading slip with memo link:', backendSlip);
+        await apiService.updateLoadingSlip(slip.id, backendSlip);
+        console.log('✅ Loading slip updated with memo link in database');
+        
+        // Also update the local state to reflect the change immediately
+        setLoadingSlips(prev => prev.map(s => 
+          s.id === slip.id ? { ...s, linkedMemoNo: memo.memoNo, linkedMemoId: memo.id } : s
+        ));
+        
+        // CRITICAL FIX: Update localStorage to ensure persistence
+        const updatedLoadingSlips = loadingSlips.map(s => 
+          s.id === slip.id ? { ...s, linkedMemoNo: memo.memoNo, linkedMemoId: memo.id } : s
+        );
+        localStorage.setItem(STORAGE_KEYS.LOADING_SLIPS, JSON.stringify(updatedLoadingSlips));
+        
+      } catch (error) {
+        console.warn('⚠️ Failed to update loading slip in database:', error);
+        // Even if database update fails, ensure local state is updated
+        console.log('🔄 Falling back to local state update only');
+      }
       
       alert(`Memo ${memo.memoNo} created successfully and linked to loading slip!`);
     } catch (error) {
@@ -466,13 +587,44 @@ const LoadingSlip: React.FC = () => {
       party = {
         id: Date.now().toString(),
         name: slip.partyName,
+        mobile: '',
+        address: '',
         balance: 0,
         activeTrips: 0,
         createdAt: new Date().toISOString()
       };
+      
+      // CRITICAL FIX: Create party via backend API first
+      try {
+        const backendParty = {
+          name: party.name,
+          mobile: party.mobile,
+          address: party.address,
+          balance: party.balance,
+          activeTrips: party.activeTrips,
+          createdAt: party.createdAt
+        };
+        await apiService.createParty(backendParty);
+        console.log('✅ Party created via backend API');
+      } catch (error) {
+        console.warn('⚠️ Failed to create party via API, using localStorage:', error);
+      }
+      
       setParties(prev => [...prev, party!]);
     }
 
+    // CRITICAL FIX: Use actual values for bill creation
+    const actualVehicleNo = slip.vehicleNo || (slip as any).vehicleNumber || 'UNKNOWN';
+    const actualFrom = slip.from || (slip as any).from_location || 'UNKNOWN';
+    const actualTo = slip.to || (slip as any).to_location || 'UNKNOWN';
+    const actualDate = slip.date || (slip as any).loadingDate || 'UNKNOWN';
+    
+    if (!party) {
+      console.error('❌ Party not found or created');
+      alert('Failed to create party for bill');
+      return;
+    }
+    
     const bill: Bill = {
       id: Date.now().toString(),
       billNo: getNextNumber('bill'),
@@ -482,10 +634,10 @@ const LoadingSlip: React.FC = () => {
       trips: [{
         id: Date.now().toString(),
         cnNo: slip.id,
-        loadingDate: slip.date,
-        from: slip.from,
-        to: slip.to,
-        vehicle: slip.vehicleNo,
+        loadingDate: actualDate,
+        from: actualFrom,
+        to: actualTo,
+        vehicle: actualVehicleNo,
         weight: slip.weight,
         freight: slip.freight,
         rtoChallan: '',
@@ -506,12 +658,90 @@ const LoadingSlip: React.FC = () => {
       createdAt: new Date().toISOString()
     };
 
-    setBills(prev => [...prev, bill]);
+    try {
+      console.log('🚀 Creating bill via backend API...', bill);
+      
+      // Create bill via API with proper backend schema mapping
+      const backendBill = {
+        billNumber: bill.billNo,
+        billDate: bill.billDate,
+        partyName: bill.partyName,
+        totalAmount: bill.totalFreight,
+        totalFreight: bill.totalFreight,
+        status: bill.status,
+        linkedLoadingSlipId: slip.id,
+        trips: bill.trips,
+        advances: bill.advances,
+        balance: bill.balance,
+        createdAt: bill.createdAt
+      };
 
-    // Update loading slip with linked bill number
-    setLoadingSlips(prev => prev.map(s => s.id === slip.id ? { ...s, linkedBillNo: bill.billNo } : s));
+      console.log('🔍 Backend bill data being sent:', JSON.stringify(backendBill, null, 2));
+      
+      const createdBill = await apiService.createBill(backendBill);
+      console.log('✅ Bill created via backend API:', createdBill);
+      
+      // Update local state immediately to prevent data loss
+      setBills(prev => [...prev, bill]);
+      setLoadingSlips(prev => prev.map(s => s.id === slip.id ? { ...s, linkedBillNo: bill.billNo } : s));
+      
+      // CRITICAL FIX: Force localStorage update to prevent data loss
+      const updatedBills = [...bills, bill];
+      const updatedLoadingSlips = loadingSlips.map(s => s.id === slip.id ? { ...s, linkedBillNo: bill.billNo } : s);
+      
+      localStorage.setItem(STORAGE_KEYS.BILLS, JSON.stringify(updatedBills));
+      localStorage.setItem(STORAGE_KEYS.LOADING_SLIPS, JSON.stringify(updatedLoadingSlips));
+      
+      // Also update the state to ensure consistency
+      setBills(updatedBills);
+      setLoadingSlips(updatedLoadingSlips);
 
-    alert(`Bill ${bill.billNo} created successfully!`);
+      // CRITICAL FIX: Update loading slip in database to show the bill link
+      try {
+        const updatedSlip = { ...slip, linkedBillNo: bill.billNo };
+        const backendSlip = {
+          slipNumber: updatedSlip.slipNo,
+          loadingDate: updatedSlip.date,
+          vehicleNumber: updatedSlip.vehicleNo,
+          from_location: updatedSlip.from,
+          to_location: updatedSlip.to,
+          partyName: updatedSlip.partyName,
+          partyPersonName: updatedSlip.partyPersonName,
+          supplierDetail: updatedSlip.supplierDetail,
+          materialType: updatedSlip.material,
+          weight: updatedSlip.weight,
+          dimensions: updatedSlip.dimensions,
+          freight: updatedSlip.freight,
+          advance: updatedSlip.advanceAmount,
+          linkedBillNo: bill.billNo,
+          createdAt: updatedSlip.createdAt
+        };
+        
+        console.log('🔧 Updating loading slip with bill link:', backendSlip);
+        await apiService.updateLoadingSlip(slip.id, backendSlip);
+        console.log('✅ Loading slip updated with bill link in database');
+        
+        // Also update the local state to reflect the change immediately
+        setLoadingSlips(prev => prev.map(s => 
+          s.id === slip.id ? { ...s, linkedBillNo: bill.billNo, linkedBillId: bill.id } : s
+        ));
+      } catch (error) {
+        console.warn('⚠️ Failed to update loading slip in database:', error);
+      }
+
+      console.log('✅ Bill created and linked to loading slip');
+      alert(`Bill ${bill.billNo} created successfully!`);
+      
+    } catch (error) {
+      console.error('❌ Failed to create bill via API:', error);
+      
+      // Fallback to localStorage
+      setBills(prev => [...prev, bill]);
+      setLoadingSlips(prev => prev.map(s => s.id === slip.id ? { ...s, linkedBillNo: bill.billNo } : s));
+      
+      console.log('✅ Bill created in localStorage as fallback');
+      alert(`Bill ${bill.billNo} created successfully (offline mode)!`);
+    }
   };
 
 
@@ -520,13 +750,50 @@ const LoadingSlip: React.FC = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Loading Slip</h1>
-        <button
-          onClick={() => setShowForm(true)}
-          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          Create Loading Slip
-        </button>
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={async () => {
+              try {
+                const [loadingSlipsData, memosData, billsData] = await Promise.all([
+                  apiService.getLoadingSlips(),
+                  apiService.getMemos(),
+                  apiService.getBills()
+                ]);
+                
+                const transformedLoadingSlips = loadingSlipsData.map((slip: any) => ({
+                  ...slip,
+                  id: slip._id || slip.id,
+                  slipNo: slip.slipNumber || slip.slipNo,
+                  date: slip.loadingDate || slip.date,
+                  vehicleNo: slip.vehicleNumber || slip.vehicleNo,
+                  from: slip.from_location || slip.from,
+                  to: slip.to_location || slip.to,
+                  material: slip.materialType || slip.material,
+                  linkedMemoNo: slip.linkedMemoNo || null,
+                  linkedBillNo: slip.linkedBillNo || null
+                }));
+                
+                setLoadingSlips(transformedLoadingSlips);
+                setMemos(memosData);
+                setBills(billsData);
+                console.log('✅ Manual refresh completed');
+              } catch (error) {
+                console.error('❌ Manual refresh failed:', error);
+                alert('Refresh failed. Please try again.');
+              }
+            }}
+            className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            🔄 Refresh
+          </button>
+          <button
+            onClick={() => setShowForm(true)}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Create Loading Slip
+          </button>
+        </div>
       </div>
 
       {/* Search Bar */}

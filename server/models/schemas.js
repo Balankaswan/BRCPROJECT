@@ -14,8 +14,10 @@ const loadingSlipSchema = new mongoose.Schema({
   weight: { type: Number, required: true },
   freight: { type: Number, required: true },
   advance: { type: Number, default: 0 },
-  linkedMemoNo: { type: String }, // Link to memo
-  linkedBillNo: { type: String }  // Link to bill
+  linkedMemoNo: { type: String, ref: 'Memo' }, // Reference to memo
+  linkedBillNo: { type: String, ref: 'Bill' }, // Reference to bill
+  linkedMemoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Memo' }, // Direct ID reference
+  linkedBillId: { type: mongoose.Schema.Types.ObjectId, ref: 'Bill' }   // Direct ID reference
 }, {
   timestamps: true
 });
@@ -41,7 +43,8 @@ const memoSchema = new mongoose.Schema({
   status: { type: String, default: 'pending' },
   paidDate: { type: String },
   paidAmount: { type: Number, default: 0 },
-  linkedLoadingSlipId: { type: String }, // Link to loading slip
+  linkedLoadingSlipId: { type: String, ref: 'LoadingSlip' }, // Reference to loading slip
+  linkedLoadingSlipNumber: { type: String, ref: 'LoadingSlip' }, // Reference by slip number
   advances: [{ 
     date: String, 
     amount: Number, 
@@ -62,6 +65,8 @@ const billSchema = new mongoose.Schema({
   balance: { type: Number, default: 0 },
   status: { type: String, default: 'pending' },
   receivedDate: { type: String },
+  linkedLoadingSlipId: { type: String, ref: 'LoadingSlip' }, // Reference to loading slip
+  linkedLoadingSlipNumber: { type: String, ref: 'LoadingSlip' }, // Reference by slip number
   trips: [{
     cnNo: String,
     loadingDate: String,
