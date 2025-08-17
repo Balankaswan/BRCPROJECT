@@ -604,6 +604,44 @@ const LoadingSlip: React.FC = () => {
         console.log(' Falling back to local state update only');
       }
       
+      // Create supplier ledger entry for memo
+      try {
+        await apiService.createSupplierLedger({
+          supplierId: supplier!.id,
+          supplierName: supplier!.name,
+          type: 'memo_credit',
+          entryType: 'credit',
+          date: memo.loadingDate,
+          memoNo: memo.memoNo,
+          memoDate: memo.loadingDate,
+          particulars: `Memo ${memo.memoNo} - ${memo.from} to ${memo.to}`,
+          creditAmount: memo.balance,
+          debitAmount: 0,
+          runningBalance: 0, // Will be calculated by backend
+          memoAmount: memo.freight,
+          commission: memo.commission,
+          mamul: memo.mamul,
+          detention: memo.detention,
+          netAmount: memo.balance
+        });
+        
+        // Update supplier balance and activeTrips
+        const supplierMemos = await apiService.getMemos();
+        const supplierBalance = supplierMemos
+          .filter((m: any) => m.supplierName === supplier!.name)
+          .reduce((sum: number, m: any) => sum + (m.balance || 0), 0);
+        const activeTrips = supplierMemos
+          .filter((m: any) => m.supplierName === supplier!.name && m.status === 'pending').length;
+        
+        setSuppliers(prev => prev.map(s => 
+          s.id === supplier!.id ? { ...s, balance: supplierBalance, activeTrips } : s
+        ));
+        
+        console.log('✅ Supplier ledger entry created and balance updated');
+      } catch (ledgerError) {
+        console.warn('⚠️ Failed to create supplier ledger entry:', ledgerError);
+      }
+      
       alert(`Memo ${memo.memoNo} created successfully and linked to loading slip!`);
     } catch (error) {
       console.error('❌ Failed to create memo via API:', error);
@@ -644,7 +682,7 @@ const LoadingSlip: React.FC = () => {
       try {
         // Check if party already exists in backend
         const existingParties = await apiService.getParties();
-        const existingParty = existingParties.find(p => p.name.toLowerCase() === party!.name.toLowerCase());
+        const existingParty = existingParties.find((p: any) => p.name.toLowerCase() === party!.name.toLowerCase());
         
         if (!existingParty) {
           const backendParty = {
@@ -823,6 +861,30 @@ const LoadingSlip: React.FC = () => {
       }
 
       console.log('✅ Bill created and linked to loading slip');
+      // Create party ledger entry for bill
+      try {
+        await apiService.createPartyLedger({
+          partyId: party!.id,
+          partyName: party!.name,
+          type: 'bill_debit',
+          entryType: 'debit',
+          date: bill.billDate,
+          billNo: bill.billNo,
+          billDate: bill.billDate,
+          particulars: `Bill ${bill.billNo} - ${bill.trips[0]?.from} to ${bill.trips[0]?.to}`,
+          debitAmount: bill.trips.reduce((sum: number, trip: any) => sum + trip.freight, 0),
+          creditAmount: 0,
+          runningBalance: 0, // Will be calculated by backend
+          billAmount: bill.trips.reduce((sum: number, trip: any) => sum + trip.freight, 0),
+          advance: bill.advances.reduce((sum: number, adv: any) => sum + adv.amount, 0),
+          balance: bill.balance
+        });
+        
+        console.log('✅ Party ledger entry created');
+      } catch (ledgerError) {
+        console.warn('⚠️ Failed to create party ledger entry:', ledgerError);
+      }
+      
       alert(`Bill ${bill.billNo} created successfully!`);
       
     } catch (error) {

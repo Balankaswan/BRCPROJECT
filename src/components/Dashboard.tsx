@@ -35,13 +35,18 @@ const Dashboard: React.FC = () => {
     loadData();
   }, []);
 
-  // Set up real-time sync for all data types (skip paid_memos as it's localStorage only)
+  // Set up real-time sync for all data types including banking, ledger, and POD data
   useEffect(() => {
     const cleanupFunctions = [
       useRealTimeSync('bills', setBills),
       useRealTimeSync('memos', setMemos),
       useRealTimeSync('parties', setParties),
-      useRealTimeSync('suppliers', setSuppliers)
+      useRealTimeSync('suppliers', setSuppliers),
+      useRealTimeSync('banking', () => {}), // Banking data sync
+      useRealTimeSync('received_bills', () => {}), // Received bills sync
+      useRealTimeSync('paid_memos', setPaidMemos), // Paid memos sync
+      useRealTimeSync('ledger', () => {}), // Ledger data sync
+      useRealTimeSync('pod', () => {}) // POD data sync
     ];
 
     return () => {

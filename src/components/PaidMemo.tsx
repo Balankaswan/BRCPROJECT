@@ -5,12 +5,21 @@ import { STORAGE_KEYS } from '../utils/storage';
 import { Memo } from '../types';
 import { formatCurrency, formatDate } from '../utils/calculations';
 import { generateMemoPDF } from '../utils/pdfGenerator';
+import { apiService, useRealTimeSync } from '../services/apiService';
 
 const PaidMemo: React.FC = () => {
   const [paidMemos, setPaidMemos] = useLocalStorage<Memo[]>(STORAGE_KEYS.PAID_MEMOS, []);
   const [searchTerm, setSearchTerm] = useState('');
   const [editingMemoId, setEditingMemoId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ paidNarration: '' });
+
+  // Set up real-time sync for paid memos
+  React.useEffect(() => {
+    const cleanup = useRealTimeSync('paid_memos', setPaidMemos);
+    return () => {
+      if (typeof cleanup === 'function') cleanup();
+    };
+  }, []);
 
   // Filter paid memos based on search term
   const filteredMemos = useMemo(() => {

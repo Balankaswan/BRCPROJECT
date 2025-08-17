@@ -11,6 +11,7 @@ import {
   calculateBillReceivedAmount
 } from '../utils/balanceCalculations';
 import AutocompleteDropdown from './AutocompleteDropdown';
+import { apiService, useRealTimeSync } from '../services/apiService';
 
 const Cashbook: React.FC = () => {
   const [bankEntries, setBankEntries] = useLocalStorage<BankEntry[]>(STORAGE_KEYS.BANK_ENTRIES, []);
@@ -21,6 +22,22 @@ const Cashbook: React.FC = () => {
   const [paidMemos, setPaidMemos] = useLocalStorage<Memo[]>(STORAGE_KEYS.PAID_MEMOS, []);
   const [parties, setParties] = useLocalStorage<Party[]>(STORAGE_KEYS.PARTIES, []);
   const [suppliers, setSuppliers] = useLocalStorage<Supplier[]>(STORAGE_KEYS.SUPPLIERS, []);
+
+  // Set up real-time sync for cashbook data
+  React.useEffect(() => {
+    const cleanupFunctions = [
+      useRealTimeSync('bank_entries', setBankEntries),
+      useRealTimeSync('received_bills', setReceivedBills),
+      useRealTimeSync('paid_memos', setPaidMemos),
+      useRealTimeSync('ledgers', setLedgers)
+    ];
+
+    return () => {
+      cleanupFunctions.forEach(cleanup => {
+        if (typeof cleanup === 'function') cleanup();
+      });
+    };
+  }, []);
 
   const [showForm, setShowForm] = useState(false);
   const [editingEntry, setEditingEntry] = useState<BankEntry | null>(null);
@@ -75,6 +92,7 @@ const Cashbook: React.FC = () => {
       type: formData.type,
       amount: parseFloat(formData.amount),
       narration: formData.narration,
+      particulars: formData.narration, // Add required particulars field
       category: formData.category,
       relatedId: formData.relatedId || undefined,
       relatedName: formData.relatedName || undefined,

@@ -20,6 +20,7 @@ import {
 import { generateAllPartyLedgers } from '../utils/autoLedgerManager';
 import { generateAllSupplierLedgers } from '../utils/autoSupplierLedgerManager';
 import jsPDF from 'jspdf';
+import { useRealTimeSync } from '../services/apiService';
 
 const Ledgers: React.FC = () => {
   // State for different ledger types
@@ -36,8 +37,24 @@ const Ledgers: React.FC = () => {
   const [bills] = useLocalStorage<Bill[]>(STORAGE_KEYS.BILLS, []);
   const [memos] = useLocalStorage<Memo[]>(STORAGE_KEYS.MEMOS, []);
   const [bankEntries] = useLocalStorage<BankEntry[]>(STORAGE_KEYS.BANK_ENTRIES, []);
-  const [ledgers] = useLocalStorage<Ledger[]>(STORAGE_KEYS.LEDGERS, []);
+  const [ledgers, setLedgers] = useLocalStorage<Ledger[]>(STORAGE_KEYS.LEDGERS, []);
+  const [partyLedgersData, setPartyLedgersData] = useLocalStorage<PartyLedger[]>(STORAGE_KEYS.PARTY_LEDGERS, []);
+  const [supplierLedgersData, setSupplierLedgersData] = useLocalStorage<SupplierLedger[]>(STORAGE_KEYS.SUPPLIER_LEDGERS, []);
 
+  // Set up real-time sync for ledger data
+  React.useEffect(() => {
+    const cleanupFunctions = [
+      useRealTimeSync('party_ledgers', setPartyLedgersData),
+      useRealTimeSync('supplier_ledgers', setSupplierLedgersData),
+      useRealTimeSync('ledgers', setLedgers)
+    ];
+
+    return () => {
+      cleanupFunctions.forEach(cleanup => {
+        if (typeof cleanup === 'function') cleanup();
+      });
+    };
+  }, []);
   
   // Generate party ledgers automatically from existing data
   const partyLedgers = useMemo(() => {

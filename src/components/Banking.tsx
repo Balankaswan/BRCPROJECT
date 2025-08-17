@@ -10,7 +10,7 @@ import {
   calculateBillReceivedAmount
 } from '../utils/balanceCalculations';
 import { updatePartyLedger, updateSupplierLedger } from '../utils/ledgerUtils';
-import { apiService } from '../services/apiService';
+import { apiService, useRealTimeSync } from '../services/apiService';
 import AutocompleteDropdown from './AutocompleteDropdown';
 import {
   BankEntry,
@@ -34,6 +34,24 @@ const Banking: React.FC = () => {
   const [suppliers, setSuppliers] = useLocalStorage<Supplier[]>(STORAGE_KEYS.SUPPLIERS, []);
   const [partyLedgers, setPartyLedgers] = useLocalStorage<any[]>(STORAGE_KEYS.PARTY_LEDGERS, []);
   const [supplierLedgers, setSupplierLedgers] = useLocalStorage<any[]>(STORAGE_KEYS.SUPPLIER_LEDGERS, []);
+
+  // Set up real-time sync for banking and ledger data
+  React.useEffect(() => {
+    const cleanupFunctions = [
+      useRealTimeSync('bank_entries', setBankEntries),
+      useRealTimeSync('received_bills', setReceivedBills),
+      useRealTimeSync('paid_memos', setPaidMemos),
+      useRealTimeSync('party_ledgers', setPartyLedgers),
+      useRealTimeSync('supplier_ledgers', setSupplierLedgers),
+      useRealTimeSync('ledgers', setLedgers)
+    ];
+
+    return () => {
+      cleanupFunctions.forEach(cleanup => {
+        if (typeof cleanup === 'function') cleanup();
+      });
+    };
+  }, []);
 
   const [showForm, setShowForm] = useState(false);
   const [editingEntry, setEditingEntry] = useState<BankEntry | null>(null);

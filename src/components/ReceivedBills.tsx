@@ -5,12 +5,21 @@ import { STORAGE_KEYS } from '../utils/storage';
 import { Bill } from '../types';
 import { formatCurrency, formatDate } from '../utils/calculations';
 import { generateBillPDF } from '../utils/pdfGenerator';
+import { useRealTimeSync } from '../services/apiService';
 
 const ReceivedBills: React.FC = () => {
   const [receivedBills, setReceivedBills] = useLocalStorage<Bill[]>(STORAGE_KEYS.RECEIVED_BILLS, []);
   const [searchTerm, setSearchTerm] = useState('');
   const [editingBillId, setEditingBillId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ receivedNarration: '' });
+
+  // Set up real-time sync for received bills
+  React.useEffect(() => {
+    const cleanup = useRealTimeSync('received_bills', setReceivedBills);
+    return () => {
+      if (typeof cleanup === 'function') cleanup();
+    };
+  }, []);
 
   // Filter received bills based on search term
   const filteredBills = useMemo(() => {
