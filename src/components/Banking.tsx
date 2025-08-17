@@ -87,6 +87,7 @@ const Banking: React.FC = () => {
       date: formData.date,
       type: formData.type,
       amount: parseFloat(formData.amount),
+      particulars: formData.narration, // Fix: Add required particulars field
       narration: formData.narration,
       category: formData.category,
       relatedId: formData.relatedId || undefined,

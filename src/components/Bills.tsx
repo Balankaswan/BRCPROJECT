@@ -40,7 +40,7 @@ const Bills: React.FC = () => {
     return () => {
       if (typeof cleanup === 'function') cleanup();
     };
-  }, [setBills]);
+  }, []);
   const [parties, setParties] = useLocalStorage<Party[]>(STORAGE_KEYS.PARTIES, []);
   const [partyLedgers, setPartyLedgers] = useLocalStorage<PartyLedger[]>(STORAGE_KEYS.PARTY_LEDGERS, []);
   const [bankEntries] = useLocalStorage<BankEntry[]>(STORAGE_KEYS.BANK_ENTRIES, []);

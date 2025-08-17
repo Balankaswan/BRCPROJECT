@@ -37,7 +37,8 @@ const Memo: React.FC = () => {
     return () => {
       if (typeof unsubscribe === 'function') unsubscribe();
     };
-  }, [setMemos]);
+  }, []);
+
   const [suppliers, setSuppliers] = useLocalStorage<Supplier[]>(STORAGE_KEYS.SUPPLIERS, []);
   const [, setPaidMemos] = useLocalStorage<MemoType[]>(STORAGE_KEYS.PAID_MEMOS, []);
   const [supplierLedgers, setSupplierLedgers] = useLocalStorage<any[]>(STORAGE_KEYS.SUPPLIER_LEDGERS, []);

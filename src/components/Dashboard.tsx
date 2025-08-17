@@ -1,16 +1,55 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { TrendingUp, Users, Truck, DollarSign, Calendar } from 'lucide-react';
-import { useLocalStorage } from '../hooks/useLocalStorage';
-import { STORAGE_KEYS } from '../utils/storage';
-import { Bill, Memo } from '../types';
+import { Bill, Memo, Party, Supplier } from '../types';
 import { formatCurrency, calculateCommission } from '../utils/calculations';
+import { apiService, useRealTimeSync } from '../services/apiService';
 
 const Dashboard: React.FC = () => {
-  const [bills] = useLocalStorage<Bill[]>(STORAGE_KEYS.BILLS, []);
-  const [memos] = useLocalStorage<Memo[]>(STORAGE_KEYS.MEMOS, []);
-  const [paidMemos] = useLocalStorage<Memo[]>(STORAGE_KEYS.PAID_MEMOS, []);
-  // Note: We calculate balances directly from bills/memos instead of using party/supplier balance fields
-  // to ensure synchronization
+  const [bills, setBills] = useState<Bill[]>([]);
+  const [memos, setMemos] = useState<Memo[]>([]);
+  const [paidMemos, setPaidMemos] = useState<Memo[]>([]);
+  const [parties, setParties] = useState<Party[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+
+  // Load data from API and set up real-time sync
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [billsData, memosData, partiesData, suppliersData] = await Promise.all([
+          apiService.getBills(),
+          apiService.getMemos(),
+          apiService.getParties(),
+          apiService.getSuppliers()
+        ]);
+        // Get paid memos from localStorage since backend doesn't have this endpoint yet
+        const paidMemosData = JSON.parse(localStorage.getItem('paidMemos') || '[]');
+        setBills(billsData);
+        setMemos(memosData);
+        setPaidMemos(paidMemosData);
+        setParties(partiesData);
+        setSuppliers(suppliersData);
+      } catch (error) {
+        console.error('Error loading dashboard data:', error);
+      }
+    };
+    loadData();
+  }, []);
+
+  // Set up real-time sync for all data types (skip paid_memos as it's localStorage only)
+  useEffect(() => {
+    const cleanupFunctions = [
+      useRealTimeSync('bills', setBills),
+      useRealTimeSync('memos', setMemos),
+      useRealTimeSync('parties', setParties),
+      useRealTimeSync('suppliers', setSuppliers)
+    ];
+
+    return () => {
+      cleanupFunctions.forEach(cleanup => {
+        if (typeof cleanup === 'function') cleanup();
+      });
+    };
+  }, []);
   
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();

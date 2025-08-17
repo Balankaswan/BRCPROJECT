@@ -420,6 +420,7 @@ class ApiService {
 
   // Force sync data to backend
   async syncToBackend(key: string, data: any[]): Promise<void> {
+
     const endpointMap: { [key: string]: string } = {
       'loadingSlips': 'loading_slips',
       'memos': 'memos',

@@ -2,12 +2,11 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Plus, Download, Edit, Trash2, Search, Eye, FileText, Receipt } from 'lucide-react';
 import PDFPreviewModal, { usePDFPreviewModal } from './PDFPreviewModal';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import { useCounters } from '../hooks/useCounters';
 import { STORAGE_KEYS } from '../utils/storage';
-import { LoadingSlip as LoadingSlipType, Memo, Bill, Party, Supplier } from '../types';
-import { formatCurrency, formatDate, calculateCommission, calculateMemoBalance } from '../utils/calculations';
+import { formatCurrency, formatDate } from '../utils/formatters';
+import { calculateCommission, calculateMemoBalance } from '../utils/calculations';
 import { generateLoadingSlipPDF } from '../utils/pdfGenerator';
-import { validateLoadingSlipForm } from '../utils/validation';
+import { useCounters } from '../hooks/useCounters';
 import { initializeLocationSuggestionsFromExistingData } from '../utils/locationSuggestions';
 import { initializeVehicleSupplierMappingsFromExistingData } from '../utils/vehicleSupplierMemory';
 import DateInput from './DateInput';
@@ -15,6 +14,7 @@ import AutoCompleteLocationInput from './AutoCompleteLocationInput';
 import DragDropInput from './DragDropInput';
 import VehicleAutocomplete from './VehicleAutocomplete';
 import { apiService } from '../services/apiService';
+import { LoadingSlip as LoadingSlipType, Memo, Bill, Party, Supplier } from '../types';
 
 const LoadingSlip: React.FC = () => {
   const [loadingSlips, setLoadingSlips] = useLocalStorage<LoadingSlipType[]>(STORAGE_KEYS.LOADING_SLIPS, []);
@@ -23,6 +23,13 @@ const LoadingSlip: React.FC = () => {
   const [suppliers, setSuppliers] = useLocalStorage<Supplier[]>(STORAGE_KEYS.SUPPLIERS, []);
   const [parties, setParties] = useLocalStorage<Party[]>(STORAGE_KEYS.PARTIES, []);
   const { getNextNumber, getNextNumberPreview, updateCounterIfHigher } = useCounters();
+  
+  // Helper function to increment counter
+  const incrementCounter = (type: 'loadingSlip' | 'memo' | 'bill') => {
+    // This will increment the counter by getting next number and discarding it
+    getNextNumber(type);
+  };
+
   const [showForm, setShowForm] = useState(false);
   const [editingSlip, setEditingSlip] = useState<LoadingSlipType | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -167,10 +174,16 @@ const LoadingSlip: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validate form including unique slip number
-    const validation = validateLoadingSlipForm(formData, editingSlip?.id);
-    if (!validation.isValid) {
-      alert(validation.message);
+    // Basic form validation
+    if (!formData.slipNo || !formData.date || !formData.vehicleNo || !formData.from || !formData.to || !formData.partyName || !formData.material || !formData.weight || !formData.freight) {
+      alert('Please fill in all required fields');
+      return;
+    }
+    
+    // Check for duplicate slip number
+    const existingSlip = loadingSlips.find(s => s.slipNo === formData.slipNo && s.id !== editingSlip?.id);
+    if (existingSlip) {
+      alert('A loading slip with this number already exists');
       return;
     }
     
@@ -407,16 +420,25 @@ const LoadingSlip: React.FC = () => {
         activeTrips: 0,
         createdAt: new Date().toISOString()
       };
-      // Create supplier via API first
+      // Create supplier via API first - check for duplicates
       try {
-        const backendSupplier = {
-          name: supplier.name,
-          balance: supplier.balance,
-          activeTrips: supplier.activeTrips,
-          createdAt: supplier.createdAt
-        };
-        await apiService.createSupplier(backendSupplier);
-        console.log('✅ Supplier created via backend API');
+        // Check if supplier already exists in backend
+        const existingSuppliers = await apiService.getSuppliers();
+        const existingSupplier = existingSuppliers.find((s: any) => s.name.toLowerCase() === supplier!.name.toLowerCase());
+        
+        if (!existingSupplier) {
+          const backendSupplier = {
+            name: supplier.name,
+            balance: supplier.balance,
+            activeTrips: supplier.activeTrips,
+            createdAt: supplier.createdAt
+          };
+          await apiService.createSupplier(backendSupplier);
+          console.log('✅ Supplier created via backend API');
+        } else {
+          console.log('✅ Using existing supplier from backend:', existingSupplier.name);
+          supplier = existingSupplier;
+        }
       } catch (error) {
         console.warn('⚠️ Failed to create supplier via API, using localStorage:', error);
         setSuppliers(prev => [...prev, supplier!]);
@@ -444,9 +466,21 @@ const LoadingSlip: React.FC = () => {
       return;
     }
 
-    // Generate memo number with proper format
-    const memoNumber = getNextNumber('memo');
-    console.log('🔢 Generated memo number:', memoNumber);
+    // Generate memo number with proper format - check for duplicates
+    let memoNumber = getNextNumber('memo');
+    
+    // Check if memo number already exists in backend
+    try {
+      const existingMemos = await apiService.getMemos();
+      while (existingMemos.some(m => m.memoNumber === memoNumber || (m as any).memoNo === memoNumber)) {
+        incrementCounter('memo');
+        memoNumber = getNextNumber('memo');
+      }
+    } catch (error) {
+      console.warn('Could not check for duplicate memo numbers:', error);
+    }
+    
+    console.log('🔢 Generated unique memo number:', memoNumber);
     
     const memo: Memo = {
       id: Date.now().toString(),
@@ -454,8 +488,8 @@ const LoadingSlip: React.FC = () => {
       loadingDate: actualDate,
       from: actualFrom,
       to: actualTo,
-      supplierId: supplier.id,
-      supplierName: supplier.name,
+      supplierId: supplier!.id,
+      supplierName: supplier!.name,
       partyName: slip.partyName, // This should remain as partyName from Loading Slip
       vehicle: actualVehicleNo,
       material: actualMaterial,
@@ -606,18 +640,27 @@ const LoadingSlip: React.FC = () => {
         createdAt: new Date().toISOString()
       };
       
-      // CRITICAL FIX: Create party via backend API first
+      // CRITICAL FIX: Create party via backend API first - check for duplicates
       try {
-        const backendParty = {
-          name: party.name,
-          mobile: party.mobile,
-          address: party.address,
-          balance: party.balance,
-          activeTrips: party.activeTrips,
-          createdAt: party.createdAt
-        };
-        await apiService.createParty(backendParty);
-        console.log('✅ Party created via backend API');
+        // Check if party already exists in backend
+        const existingParties = await apiService.getParties();
+        const existingParty = existingParties.find(p => p.name.toLowerCase() === party!.name.toLowerCase());
+        
+        if (!existingParty) {
+          const backendParty = {
+            name: party.name,
+            mobile: party.mobile,
+            address: party.address,
+            balance: party.balance,
+            activeTrips: party.activeTrips,
+            createdAt: party.createdAt
+          };
+          await apiService.createParty(backendParty);
+          console.log('✅ Party created via backend API');
+        } else {
+          console.log('✅ Using existing party from backend:', existingParty.name);
+          party = existingParty;
+        }
       } catch (error) {
         console.warn('⚠️ Failed to create party via API, using localStorage:', error);
       }
@@ -637,9 +680,25 @@ const LoadingSlip: React.FC = () => {
       return;
     }
     
+    // Generate bill number with proper format - check for duplicates
+    let billNumber = getNextNumber('bill');
+    
+    // Check if bill number already exists in backend
+    try {
+      const existingBills = await apiService.getBills();
+      while (existingBills.some(b => b.billNumber === billNumber || (b as any).billNo === billNumber)) {
+        incrementCounter('bill');
+        billNumber = getNextNumber('bill');
+      }
+    } catch (error) {
+      console.warn('Could not check for duplicate bill numbers:', error);
+    }
+    
+    console.log('🔢 Generated unique bill number:', billNumber);
+    
     const bill: Bill = {
       id: Date.now().toString(),
-      billNo: getNextNumber('bill'),
+      billNo: billNumber,
       billDate: new Date().toISOString().split('T')[0],
       partyId: party.id,
       partyName: party.name,
@@ -1163,3 +1222,4 @@ const LoadingSlip: React.FC = () => {
 };
 
 export default LoadingSlip;
+

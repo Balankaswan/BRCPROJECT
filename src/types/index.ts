@@ -144,6 +144,7 @@ export interface BankEntry {
   date: string;
   type: 'credit' | 'debit';
   amount: number;
+  particulars: string; // Required field for backend validation
   narration: string;
   category: 'bill' | 'memo' | 'advance' | 'expense' | 'transfer' | 'other';
   relatedId?: string;
