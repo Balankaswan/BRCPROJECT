@@ -11,7 +11,7 @@ import {
   calculateBillReceivedAmount
 } from '../utils/balanceCalculations';
 import AutocompleteDropdown from './AutocompleteDropdown';
-import { apiService, useRealTimeSync } from '../services/apiService';
+import { useRealTimeSync } from '../services/apiService';
 
 const Cashbook: React.FC = () => {
   const [bankEntries, setBankEntries] = useLocalStorage<BankEntry[]>(STORAGE_KEYS.BANK_ENTRIES, []);
@@ -26,10 +26,9 @@ const Cashbook: React.FC = () => {
   // Set up real-time sync for cashbook data
   React.useEffect(() => {
     const cleanupFunctions = [
-      useRealTimeSync('bank_entries', setBankEntries),
-      useRealTimeSync('received_bills', setReceivedBills),
-      useRealTimeSync('paid_memos', setPaidMemos),
-      useRealTimeSync('ledgers', setLedgers)
+      useRealTimeSync('bank_entries', setBankEntries)
+      // Note: Removed non-existent API endpoints to prevent 404 errors
+      // received_bills, paid_memos, ledgers don't exist
     ];
 
     return () => {

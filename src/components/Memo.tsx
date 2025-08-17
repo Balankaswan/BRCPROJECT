@@ -337,7 +337,7 @@ const Memo: React.FC = () => {
     setShowAdvanceForm(null);
   };
 
-  const handleMarkAsPaid = (memo: MemoType) => {
+  const handleMarkAsPaid = async (memo: MemoType) => {
     const input = prompt('Enter paid date (YYYY-MM-DD). Leave blank for today:')?.trim();
     const today = new Date().toISOString().split('T')[0];
     const paidDate = input === '' || input === undefined ? today : input;
@@ -349,33 +349,35 @@ const Memo: React.FC = () => {
       return;
     }
 
-    (async () => {
-      try {
-        // Persist to backend; real-time socket will refresh memos list
-        await apiService.updateMemo(memo.id, {
-          status: 'paid',
-          paidDate,
-          updatedAt: new Date().toISOString(),
-        });
+    try {
+      // Update backend first
+      await apiService.updateMemo(memo.id, {
+        status: 'paid',
+        paidDate,
+        updatedAt: new Date().toISOString(),
+      });
 
-        // Optimistic local updates for immediate feedback
-        const total = (memo.freight || 0) + (memo.commission || 0) + (memo.detention || 0) + (memo.rtoAmount || 0) + (memo.extraCharge || 0) - (memo.mamul || 0);
-        const paidAmount = total - (memo.balance || 0);
-        const paidMemo = { ...memo, status: 'paid' as const, paidDate, paidAmount, balance: 0 };
-        setPaidMemos(prev => [...prev, paidMemo]);
-        setMemos(prev => prev.filter(m => m.id !== memo.id));
+      // Calculate paid amount
+      const total = (memo.freight || 0) + (memo.commission || 0) + (memo.detention || 0) + (memo.rtoAmount || 0) + (memo.extraCharge || 0) - (memo.mamul || 0);
+      const paidAmount = total - (memo.balance || 0);
+      
+      // Move memo to paid memos
+      const paidMemo = { ...memo, status: 'paid' as const, paidDate, paidAmount, balance: 0 };
+      setPaidMemos(prev => [...prev, paidMemo]);
+      setMemos(prev => prev.filter(m => m.id !== memo.id));
 
-        // Update supplier balance
-        setSuppliers(prev => prev.map(supplier =>
+      // Update supplier balance and active trips
+      setSuppliers(prev => prev.map(supplier =>
           supplier.id === memo.supplierId
             ? { ...supplier, balance: supplier.balance - memo.balance, activeTrips: supplier.activeTrips - 1 }
             : supplier
         ));
-      } catch (error) {
-        console.error('Failed to mark memo as paid:', error);
-        alert('Failed to mark memo as paid. Please try again.');
-      }
-    })();
+      
+      alert('Memo marked as paid successfully!');
+    } catch (error) {
+      console.error('❌ Failed to mark memo as paid:', error);
+      alert('Failed to mark memo as paid. Please try again.');
+    }
   };
 
   const handleSupplierSelect = (supplierId: string) => {

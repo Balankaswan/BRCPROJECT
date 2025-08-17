@@ -7,13 +7,11 @@ import { formatCurrency, formatDate } from '../utils/formatters';
 import { calculateCommission, calculateMemoBalance } from '../utils/calculations';
 import { generateLoadingSlipPDF } from '../utils/pdfGenerator';
 import { useCounters } from '../hooks/useCounters';
-import { initializeLocationSuggestionsFromExistingData } from '../utils/locationSuggestions';
-import { initializeVehicleSupplierMappingsFromExistingData } from '../utils/vehicleSupplierMemory';
 import DateInput from './DateInput';
 import AutoCompleteLocationInput from './AutoCompleteLocationInput';
 import DragDropInput from './DragDropInput';
 import VehicleAutocomplete from './VehicleAutocomplete';
-import { apiService } from '../services/apiService';
+import { apiService, useRealTimeSync } from '../services/apiService';
 import { LoadingSlip as LoadingSlipType, Memo, Bill, Party, Supplier } from '../types';
 
 const LoadingSlip: React.FC = () => {
@@ -36,23 +34,33 @@ const LoadingSlip: React.FC = () => {
   const [previewSlip, setPreviewSlip] = useState<LoadingSlipType | null>(null);
   const { isOpen: isPreviewOpen, openModal: openPreview, closeModal: closePreview } = usePDFPreviewModal();
 
-  // Initialize location suggestions and vehicle mappings
+  // Set up real-time sync for existing API endpoints only
   useEffect(() => {
-    initializeLocationSuggestionsFromExistingData();
-    initializeVehicleSupplierMappingsFromExistingData();
+    const cleanupFunctions = [
+      useRealTimeSync('loading_slips', setLoadingSlips),
+      useRealTimeSync('memos', setMemos),
+      useRealTimeSync('bills', setBills),
+      useRealTimeSync('parties', setParties),
+      useRealTimeSync('suppliers', setSuppliers)
+    ];
+
+    return () => {
+      cleanupFunctions.forEach(cleanup => {
+        if (typeof cleanup === 'function') cleanup();
+      });
+    };
   }, []);
 
-  // REAL-TIME DATABASE SYNC - This ensures data consistency across devices
+  // Initial data load from API
   useEffect(() => {
-    console.log('🚀 Initializing real-time database sync...');
-    
-    // Initial data load
     const loadInitialData = async () => {
       try {
-        const [loadingSlipsData, memosData, billsData] = await Promise.all([
+        const [loadingSlipsData, memosData, billsData, partiesData, suppliersData] = await Promise.all([
           apiService.getLoadingSlips(),
           apiService.getMemos(),
-          apiService.getBills()
+          apiService.getBills(),
+          apiService.getParties(),
+          apiService.getSuppliers()
         ]);
         
         // Transform loading slips data with proper field mapping
@@ -514,8 +522,8 @@ const LoadingSlip: React.FC = () => {
       const backendMemo = {
         memoNumber: memo.memoNo,
         loadingDate: memo.loadingDate,
-        from_location: memo.from,
-        to_location: memo.to,
+        from: memo.from,
+        to: memo.to,
         supplierName: memo.supplierName,
         partyName: memo.partyName,
         vehicleNumber: memo.vehicle,
@@ -593,15 +601,15 @@ const LoadingSlip: React.FC = () => {
         ));
         
         // CRITICAL FIX: Update localStorage to ensure persistence
-        const updatedLoadingSlips = loadingSlips.map(s => 
+        const updatedLoadingSlips2 = loadingSlips.map(s => 
           s.id === slip.id ? { ...s, linkedMemoNo: memo.memoNo, linkedMemoId: backendMemoId } : s
         );
-        localStorage.setItem(STORAGE_KEYS.LOADING_SLIPS, JSON.stringify(updatedLoadingSlips));
+        localStorage.setItem(STORAGE_KEYS.LOADING_SLIPS, JSON.stringify(updatedLoadingSlips2));
         
       } catch (error) {
-        console.warn(' Failed to update loading slip in database:', error);
+        console.warn('⚠️ Failed to update loading slip in database:', error);
         // Even if database update fails, ensure local state is updated
-        console.log(' Falling back to local state update only');
+        console.log('🔄 Falling back to local state update only');
       }
       
       // Create supplier ledger entry for memo
@@ -810,11 +818,11 @@ const LoadingSlip: React.FC = () => {
         setBills(billsData);
       } catch (e) {
         // Fallback: push local bill with backend ID
-        setBills(prev => [...prev.filter(b => b.billNo !== bill.billNo), { ...bill, id: backendBillId }]);
+        setBills((prev: any[]) => [...prev.filter(b => b.billNo !== bill.billNo), { ...bill, id: backendBillId }]);
       }
       
       // Update local loading slip link immediately for better UX
-      setLoadingSlips(prev => prev.map(s => s.id === slip.id ? { ...s, linkedBillNo: bill.billNo, linkedBillId: backendBillId } : s));
+      setLoadingSlips((prev: any[]) => prev.map(s => s.id === slip.id ? { ...s, linkedBillNo: bill.billNo, linkedBillId: backendBillId } : s));
       
       // CRITICAL FIX: Force localStorage update to prevent data loss
       const updatedLoadingSlips2 = loadingSlips.map(s => s.id === slip.id ? { ...s, linkedBillNo: bill.billNo, linkedBillId: backendBillId } : s);
@@ -928,8 +936,8 @@ const LoadingSlip: React.FC = () => {
                   linkedBillNo: slip.linkedBillNo || null
                 }));
                 
-                setLoadingSlips(transformedLoadingSlips);
-                setMemos(memosData);
+                LoadingSlip(transformedLoadingSlips);
+                useMemo(memosData);
                 setBills(billsData);
                 console.log('✅ Manual refresh completed');
               } catch (error) {
@@ -1284,4 +1292,3 @@ const LoadingSlip: React.FC = () => {
 };
 
 export default LoadingSlip;
-

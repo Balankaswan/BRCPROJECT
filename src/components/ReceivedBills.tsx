@@ -13,13 +13,13 @@ const ReceivedBills: React.FC = () => {
   const [editingBillId, setEditingBillId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ receivedNarration: '' });
 
-  // Set up real-time sync for received bills
-  React.useEffect(() => {
-    const cleanup = useRealTimeSync('received_bills', setReceivedBills);
-    return () => {
-      if (typeof cleanup === 'function') cleanup();
-    };
-  }, []);
+  // Note: received_bills endpoint doesn't exist - using localStorage only
+  // React.useEffect(() => {
+  //   const cleanup = useRealTimeSync('received_bills', setReceivedBills);
+  //   return () => {
+  //     if (typeof cleanup === 'function') cleanup();
+  //   };
+  // }, []);
 
   // Filter received bills based on search term
   const filteredBills = useMemo(() => {

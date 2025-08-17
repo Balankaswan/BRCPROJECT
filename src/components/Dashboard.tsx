@@ -41,12 +41,9 @@ const Dashboard: React.FC = () => {
       useRealTimeSync('bills', setBills),
       useRealTimeSync('memos', setMemos),
       useRealTimeSync('parties', setParties),
-      useRealTimeSync('suppliers', setSuppliers),
-      useRealTimeSync('banking', () => {}), // Banking data sync
-      useRealTimeSync('received_bills', () => {}), // Received bills sync
-      useRealTimeSync('paid_memos', setPaidMemos), // Paid memos sync
-      useRealTimeSync('ledger', () => {}), // Ledger data sync
-      useRealTimeSync('pod', () => {}) // POD data sync
+      useRealTimeSync('suppliers', setSuppliers)
+      // Note: Removed non-existent API endpoints to prevent 404 errors
+      // banking, received_bills, paid_memos, ledger, pod endpoints don't exist
     ];
 
     return () => {

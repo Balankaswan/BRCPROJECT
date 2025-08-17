@@ -128,8 +128,8 @@ const Party: React.FC = () => {
     }
   };
 
-  const totalPartyBalance = parties.reduce((sum, party) => sum + party.balance, 0);
-  const totalActiveTrips = parties.reduce((sum, party) => sum + party.activeTrips, 0);
+  const totalPartyBalance = parties.reduce((sum, party) => sum + (party.balance || 0), 0);
+  const totalActiveTrips = parties.reduce((sum, party) => sum + (party.activeTrips || 0), 0);
 
 
 

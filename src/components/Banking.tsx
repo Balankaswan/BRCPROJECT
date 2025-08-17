@@ -38,12 +38,9 @@ const Banking: React.FC = () => {
   // Set up real-time sync for banking and ledger data
   React.useEffect(() => {
     const cleanupFunctions = [
-      useRealTimeSync('bank_entries', setBankEntries),
-      useRealTimeSync('received_bills', setReceivedBills),
-      useRealTimeSync('paid_memos', setPaidMemos),
-      useRealTimeSync('party_ledgers', setPartyLedgers),
-      useRealTimeSync('supplier_ledgers', setSupplierLedgers),
-      useRealTimeSync('ledgers', setLedgers)
+      useRealTimeSync('bank_entries', setBankEntries)
+      // Note: Removed non-existent API endpoints to prevent 404 errors
+      // received_bills, paid_memos, party_ledgers, supplier_ledgers, ledgers don't exist
     ];
 
     return () => {

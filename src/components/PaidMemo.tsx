@@ -13,13 +13,13 @@ const PaidMemo: React.FC = () => {
   const [editingMemoId, setEditingMemoId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ paidNarration: '' });
 
-  // Set up real-time sync for paid memos
-  React.useEffect(() => {
-    const cleanup = useRealTimeSync('paid_memos', setPaidMemos);
-    return () => {
-      if (typeof cleanup === 'function') cleanup();
-    };
-  }, []);
+  // Note: paid_memos endpoint doesn't exist - using localStorage only
+  // React.useEffect(() => {
+  //   const cleanup = useRealTimeSync('paid_memos', setPaidMemos);
+  //   return () => {
+  //     if (typeof cleanup === 'function') cleanup();
+  //   };
+  // }, []);
 
   // Filter paid memos based on search term
   const filteredMemos = useMemo(() => {

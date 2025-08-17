@@ -20,7 +20,6 @@ import {
 import { generateAllPartyLedgers } from '../utils/autoLedgerManager';
 import { generateAllSupplierLedgers } from '../utils/autoSupplierLedgerManager';
 import jsPDF from 'jspdf';
-import { useRealTimeSync } from '../services/apiService';
 
 const Ledgers: React.FC = () => {
   // State for different ledger types
@@ -37,24 +36,9 @@ const Ledgers: React.FC = () => {
   const [bills] = useLocalStorage<Bill[]>(STORAGE_KEYS.BILLS, []);
   const [memos] = useLocalStorage<Memo[]>(STORAGE_KEYS.MEMOS, []);
   const [bankEntries] = useLocalStorage<BankEntry[]>(STORAGE_KEYS.BANK_ENTRIES, []);
-  const [ledgers, setLedgers] = useLocalStorage<Ledger[]>(STORAGE_KEYS.LEDGERS, []);
-  const [partyLedgersData, setPartyLedgersData] = useLocalStorage<PartyLedger[]>(STORAGE_KEYS.PARTY_LEDGERS, []);
-  const [supplierLedgersData, setSupplierLedgersData] = useLocalStorage<SupplierLedger[]>(STORAGE_KEYS.SUPPLIER_LEDGERS, []);
-
-  // Set up real-time sync for ledger data
-  React.useEffect(() => {
-    const cleanupFunctions = [
-      useRealTimeSync('party_ledgers', setPartyLedgersData),
-      useRealTimeSync('supplier_ledgers', setSupplierLedgersData),
-      useRealTimeSync('ledgers', setLedgers)
-    ];
-
-    return () => {
-      cleanupFunctions.forEach(cleanup => {
-        if (typeof cleanup === 'function') cleanup();
-      });
-    };
-  }, []);
+  const [ledgers] = useLocalStorage<Ledger[]>(STORAGE_KEYS.LEDGERS, []);
+  // Note: Ledgers are now auto-generated from bills and parties
+  // No API sync needed as ledgers are computed locally
   
   // Generate party ledgers automatically from existing data
   const partyLedgers = useMemo(() => {
@@ -768,8 +752,8 @@ const Ledgers: React.FC = () => {
             </div>
           </div>
           <ul className="divide-y divide-gray-200">
-            {filteredPartyLedgers.map((ledger) => (
-              <li key={ledger.id}>
+            {filteredPartyLedgers.map((ledger, index) => (
+              <li key={ledger.id || `party-ledger-${index}`}>
                 <div className="px-4 py-4 hover:bg-gray-50">
                   <div className="grid grid-cols-5 gap-4 items-center">
                     <div>
@@ -834,8 +818,8 @@ const Ledgers: React.FC = () => {
             </div>
           </div>
           <ul className="divide-y divide-gray-200">
-            {filteredSupplierLedgers.map((ledger) => (
-              <li key={ledger.id}>
+            {filteredSupplierLedgers.map((ledger, index) => (
+              <li key={ledger.id || `supplier-ledger-${index}`}>
                 <div className="px-4 py-4 hover:bg-gray-50">
                   <div className="grid grid-cols-5 gap-4 items-center">
                     <div>
@@ -900,8 +884,8 @@ const Ledgers: React.FC = () => {
             </div>
           </div>
           <ul className="divide-y divide-gray-200">
-            {filteredLedgers.map((ledger) => (
-              <li key={ledger.id}>
+            {filteredLedgers.map((ledger, index) => (
+              <li key={ledger.id || `general-ledger-${index}`}>
                 <div className="px-4 py-4 hover:bg-gray-50">
                   <div className="grid grid-cols-5 gap-4 items-center">
                     <div>
