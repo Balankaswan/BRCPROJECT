@@ -21,7 +21,9 @@ const {
   BankEntry,
   Party,
   Supplier,
-  Counter
+  Counter,
+  PartyLedger,
+  SupplierLedger
 } = require('./models/schemas');
 
 const app = express();
@@ -231,7 +233,9 @@ const modelMap = {
   'bills': Bill,
   'bank_entries': BankEntry,
   'parties': Party,
-  'suppliers': Supplier
+  'suppliers': Supplier,
+  'party_ledgers': PartyLedger,
+  'supplier_ledgers': SupplierLedger
 };
 
 function createMongoRoutes(routeName, Model) {
@@ -445,6 +449,8 @@ app.get('/api', (req, res) => {
       memos: '/api/memos',
       bills: '/api/bills',
       bank_entries: '/api/bank_entries',
+      party_ledgers: '/api/party_ledgers',
+      supplier_ledgers: '/api/supplier_ledgers',
       upload: '/api/upload',
       test: '/api/test-party'
     },

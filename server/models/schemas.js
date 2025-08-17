@@ -133,6 +133,36 @@ const counterSchema = new mongoose.Schema({
   _id: false
 });
 
+// Party Ledger Schema
+const partyLedgerSchema = new mongoose.Schema({
+  partyName: { type: String, required: true },
+  date: { type: String, required: true },
+  particulars: { type: String, required: true },
+  billNo: { type: String },
+  debit: { type: Number, default: 0 },
+  credit: { type: Number, default: 0 },
+  balance: { type: Number, default: 0 },
+  relatedId: { type: String },
+  relatedType: { type: String, enum: ['bill', 'advance', 'adjustment'] }
+}, {
+  timestamps: true
+});
+
+// Supplier Ledger Schema
+const supplierLedgerSchema = new mongoose.Schema({
+  supplierName: { type: String, required: true },
+  date: { type: String, required: true },
+  particulars: { type: String, required: true },
+  memoNo: { type: String },
+  debit: { type: Number, default: 0 },
+  credit: { type: Number, default: 0 },
+  balance: { type: Number, default: 0 },
+  relatedId: { type: String },
+  relatedType: { type: String, enum: ['memo', 'advance', 'adjustment'] }
+}, {
+  timestamps: true
+});
+
 // Create Models
 const LoadingSlip = mongoose.model('LoadingSlip', loadingSlipSchema);
 const Memo = mongoose.model('Memo', memoSchema);
@@ -141,6 +171,8 @@ const BankEntry = mongoose.model('BankEntry', bankEntrySchema);
 const Party = mongoose.model('Party', partySchema);
 const Supplier = mongoose.model('Supplier', supplierSchema);
 const Counter = mongoose.model('Counter', counterSchema);
+const PartyLedger = mongoose.model('PartyLedger', partyLedgerSchema);
+const SupplierLedger = mongoose.model('SupplierLedger', supplierLedgerSchema);
 
 module.exports = {
   LoadingSlip,
@@ -149,5 +181,7 @@ module.exports = {
   BankEntry,
   Party,
   Supplier,
-  Counter
+  Counter,
+  PartyLedger,
+  SupplierLedger
 };
